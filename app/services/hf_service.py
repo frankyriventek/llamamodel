@@ -122,10 +122,15 @@ def _is_real_llm_model(m: Any) -> bool:
 def _infer_capabilities_from_text(text: str, model_id: str) -> dict[str, bool]:
     """Infer vision, tools, thinking from model id and/or card text."""
     s = (text or "").lower() + " " + (model_id or "").lower()
+    # Also check model_id separately for common naming patterns
+    mid = (model_id or "").lower()
     return {
         "vision": (
             "vision" in s or "visual" in s or "vlm" in s or "multimodal" in s
             or "image-text" in s or "image understanding" in s or "image input" in s
+            or "llava" in mid or "cogvlm" in mid or "internvl" in mid or "qwen-vl" in mid
+            or "pixtral" in mid or "cambrian" in mid or "xgen-mm" in mid or "phi-3-vision" in mid
+            or "idefics" in mid or "paligemma" in mid or "minicpm-v" in mid
         ),
         "tools": (
             "tool call" in s or "tool use" in s or "tool_use" in s
@@ -136,6 +141,7 @@ def _infer_capabilities_from_text(text: str, model_id: str) -> dict[str, bool]:
         "thinking": (
             "thinking" in s or "<think>" in s or "chain-of-thought" in s
             or "chain of thought" in s or "step-by-step reasoning" in s
+            or "deepseek-r1" in mid or "deepseek r1" in s or "r1-distill" in mid
         ),
     }
 
