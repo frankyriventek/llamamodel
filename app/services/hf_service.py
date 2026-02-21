@@ -338,6 +338,48 @@ def group_gguf_by_quantization(
     return result
 
 
+# Tags to exclude from display (internal HF tags, noise, already shown via capability icons)
+_HIDDEN_TAGS = {
+    "gguf", "transformers", "pytorch", "safetensors", "license:other",
+    "license:apache-2.0", "license:mit", "license:llama3", "license:llama2",
+    "license:gemma", "license:cc-by-4.0", "license:cc-by-nc-4.0",
+    "license:cc-by-sa-4.0", "license:cc-by-nc-sa-4.0", "license:gpl-3.0",
+    "license:agpl-3.0", "license:openrail", "license:openrail++",
+    "autotrain_compatible", "endpoints_compatible", "has_space",
+    "region:us", "region:eu", "region:ap",
+    "text-generation-inference", "text-generation",
+    "conversational", "text2text-generation",
+}
+
+
+def _curate_display_tags(tags: list[str]) -> list[str]:
+    """
+    Return a curated list of tags suitable for display as badges.
+    Filters out internal/noisy HF tags and limits to 8 tags.
+    """
+    result = []
+    for t in tags:
+        tl = t.lower()
+        if tl in _HIDDEN_TAGS:
+            continue
+        if tl.startswith("license:"):
+            continue
+        if tl.startswith("arxiv:"):
+            continue
+        if tl.startswith("base_model:"):
+            continue
+        if tl.startswith("model-index"):
+            continue
+        # Skip pure size tags (already shown as param count badge)
+        import re as _re
+        if _re.match(r"^\d+\.?\d*[bBmMkK]$", tl):
+            continue
+        result.append(t)
+        if len(result) >= 8:
+            break
+    return result
+
+
 def search_models(
     query: str | None = None,
     limit: int = 20,
@@ -441,6 +483,9 @@ def search_models(
         except Exception:
             pass
 
+        # Curated display tags: exclude internal/noisy HF tags, keep meaningful ones
+        display_tags = _curate_display_tags(tags_list)
+
         items.append({
             "id": m.id,
             "repo_name": repo_name,
@@ -452,6 +497,7 @@ def search_models(
             "tools": caps["tools"],
             "thinking": caps["thinking"],
             "short_desc": short_desc,
+            "tags": display_tags,
         })
 
     logger.debug(
