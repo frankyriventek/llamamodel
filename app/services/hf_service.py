@@ -126,6 +126,8 @@ def _infer_capabilities_from_text(text: str, model_id: str) -> dict[str, bool]:
         "vision": (
             "vision" in s or "visual" in s or "vlm" in s or "multimodal" in s
             or "image-text" in s or "image understanding" in s or "image input" in s
+            or "-vl" in s or "_vl" in s or " vl " in s or s.endswith(" vl")
+            or "vl-" in s or "vl_" in s
         ),
         "tools": (
             "tool call" in s or "tool use" in s or "tool_use" in s
@@ -416,25 +418,32 @@ def search_models(
     limit: int = 20,
     offset: int = 0,
     sort: str = "downloads",
+    tag_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Search for GGUF models on Hugging Face.
-    Returns list of {id, repo_name, author, downloads, likes, size_display, vision, tools, thinking}.
+    Returns list of {id, repo_name, author, downloads, likes, size_display, vision, tools, thinking, ...}.
 
     Filtering: only real LLM/chat model repos are returned (datasets, embedding models,
     ASR, image models etc. are excluded via _is_real_llm_model()).
-    Sort: always by downloads descending (HF API default for sort="downloads").
+    tag_filter: if set, only return models that have this tag.
+    Sort: always fetches by downloads from HF API; client-side sorts applied in api.py.
     """
     api = _get_api()
     # Fetch more than needed to compensate for filtered-out non-LLM repos
     fetch_limit = min((offset + limit) * 3, 200)
 
+    # Build HF API filter: combine "gguf" with tag filter if provided
+    hf_filter = "gguf"
+    if tag_filter:
+        hf_filter = ["gguf", tag_filter]
+
     def _do_list_models(full: bool):
         return list(api.list_models(
-            filter="gguf",
+            filter=hf_filter,
             search=query or "",
-            sort="downloads",          # always sort by downloads descending
-            direction=-1,              # descending
+            sort="downloads",          # always fetch by downloads descending from HF
+            direction=-1,
             limit=fetch_limit,
             **({"full": True} if full else {}),
         ))
@@ -473,6 +482,8 @@ def search_models(
             or "llava" in id_lower or "qwen-vl" in id_lower or "internvl" in id_lower
             or "minicpm-v" in id_lower or "phi-3-vision" in id_lower
             or "cogvlm" in id_lower or "moondream" in id_lower
+            or "-vl" in id_lower or "_vl" in id_lower or "/vl-" in id_lower
+            or id_lower.endswith("-vl") or id_lower.endswith("_vl")
         )
         tools_from_id = (
             "tool" in id_lower or "function" in id_lower

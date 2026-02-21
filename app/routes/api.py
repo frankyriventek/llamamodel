@@ -33,10 +33,69 @@ async def api_search(
     q: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    sort: str = "downloads",
+    vision: bool | None = None,
+    tools: bool | None = None,
+    thinking: bool | None = None,
+    tag: str | None = None,
 ):
-    """Search GGUF models on Hugging Face."""
-    logger.debug("GET /api/search q=%r limit=%d offset=%d", q, limit, offset)
-    items = hf_service.search_models(query=q, limit=limit, offset=offset)
+    """
+    Search GGUF models on Hugging Face.
+    - q: text search query; use [tag_name] syntax to filter by tag
+    - sort: downloads (default), likes, name, author, size
+    - vision/tools/thinking: filter by capability (true/false)
+    - tag: filter by exact tag name
+    """
+    logger.debug(
+        "GET /api/search q=%r limit=%d offset=%d sort=%s vision=%s tools=%s thinking=%s tag=%s",
+        q, limit, offset, sort, vision, tools, thinking, tag,
+    )
+    # Parse [tag_name] syntax from query
+    tag_filter: str | None = tag
+    text_query: str | None = q
+    if q:
+        import re as _re
+        m = _re.match(r"^\[(.+)\]$", q.strip())
+        if m:
+            tag_filter = m.group(1).strip()
+            text_query = None
+
+    items = hf_service.search_models(
+        query=text_query,
+        limit=limit * 3,  # fetch extra to allow client-side filtering
+        offset=offset,
+        sort=sort,
+        tag_filter=tag_filter,
+    )
+
+    # Apply capability filters (client-side after fetch)
+    if vision is not None:
+        items = [m for m in items if bool(m.get("vision")) == vision]
+    if tools is not None:
+        items = [m for m in items if bool(m.get("tools")) == tools]
+    if thinking is not None:
+        items = [m for m in items if bool(m.get("thinking")) == thinking]
+
+    # Apply client-side sort for non-HF-native sorts
+    if sort == "likes":
+        items.sort(key=lambda m: m.get("likes", 0), reverse=True)
+    elif sort == "name":
+        items.sort(key=lambda m: m.get("repo_name", "").lower())
+    elif sort == "author":
+        items.sort(key=lambda m: m.get("author", "").lower())
+    elif sort == "size":
+        # Sort by size_display numerically (parse B/M suffix)
+        def _size_key(m):
+            s = m.get("size_display", "") or ""
+            import re as _re2
+            mm = _re2.match(r"(\d+\.?\d*)\s*([BbMm])", s)
+            if mm:
+                v = float(mm.group(1))
+                return v * 1e9 if mm.group(2).upper() == "B" else v * 1e6
+            return 0
+        items.sort(key=_size_key, reverse=True)
+
+    items = items[:limit]
     logger.debug("GET /api/search returned %d models", len(items))
     return {"models": items}
 
