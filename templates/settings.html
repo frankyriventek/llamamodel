@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Settings – LLM Manager{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<p class="muted">Configure via <code>config.yaml</code> in the project root or environment variables.</p>
+<div class="card">
+  <table>
+    <tr><td><strong>Port</strong></td><td>{{ config.port }}</td></tr>
+    <tr><td><strong>Models directory</strong></td><td><code>{{ config.models_dir }}</code></td></tr>
+    <tr><td><strong>models.ini path</strong></td><td><code>{{ config.models_dir }}/models.ini</code></td></tr>
+  </table>
+</div>
+<p class="muted">Environment overrides: <code>LLAMAMODEL_PORT</code>, <code>LLAMAMODEL_MODELS_DIR</code>. Restart the app after changing config.</p>
+{% endblock %}

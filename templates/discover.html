@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Discover – LLM Manager{% endblock %}
+{% block content %}
+<h1>Discover GGUF models</h1>
+<form method="get" action="/discover" style="margin-bottom: 1rem;">
+  <input type="text" name="q" value="{{ query }}" placeholder="Search Hugging Face (e.g. llama, mistral)" style="min-width: 280px;">
+  <button type="submit">Search</button>
+</form>
+{% if models %}
+<ul style="list-style: none; padding: 0;">
+  {% for m in models %}
+  <li class="card">
+    <a href="/model/{{ m.id }}"><strong>{{ m.id }}</strong></a>
+    <span class="muted"> · {{ m.downloads }} downloads</span>
+    <p class="muted" style="margin: 0.25rem 0 0;">{{ m.author }}</p>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No models found. Try a different search or browse without a query.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}My Models – LLM Manager{% endblock %}
+{% block content %}
+<h1>My Models</h1>
+<p class="muted">Models defined in <code>models.ini</code> ({{ config.models_dir }}/models.ini). Compatible with llama.cpp server.</p>
+{% if sections %}
+<ul style="list-style: none; padding: 0;">
+  {% for s in sections %}
+  <li class="card">
+    <strong>{{ s.name }}</strong>
+    <a href="/models/edit/{{ s.name | urlencode }}" class="btn btn-secondary" style="margin-left: 0.5rem;">Edit</a>
+    <a href="/models/delete/{{ s.name | urlencode }}" class="btn btn-secondary" style="margin-left: 0.25rem;" onclick="return confirm('Remove this model from models.ini?');">Delete</a>
+    <ul class="muted" style="margin: 0.5rem 0 0; font-size: 0.85rem;">
+      {% for k, v in s.params.items() %}
+      <li><code>{{ k }}</code> = {{ v }}</li>
+      {% endfor %}
+    </ul>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No models in models.ini yet. Download a model from Discover to add one.</p>
+{% endif %}
+{% endblock %}

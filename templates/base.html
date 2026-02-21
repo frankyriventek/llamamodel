@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}LLM Manager{% endblock %}</title>
+  <style>
+    :root { --bg: #1a1b26; --fg: #c0caf5; --muted: #565f89; --accent: #7aa2f7; --card: #24283b; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; min-height: 100vh; }
+    nav { background: var(--card); padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; }
+    nav a { color: var(--accent); text-decoration: none; }
+    nav a:hover { text-decoration: underline; }
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.5rem; margin-top: 0; }
+    a { color: var(--accent); }
+    input[type="text"], input[type="number"], select, textarea { background: var(--card); color: var(--fg); border: 1px solid var(--muted); padding: 0.5rem; border-radius: 4px; }
+    button, .btn { background: var(--accent); color: var(--bg); border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; font-size: 1rem; }
+    button:hover, .btn:hover { opacity: 0.9; }
+    .btn-secondary { background: var(--muted); color: var(--fg); }
+    .card { background: var(--card); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    pre, code { background: var(--card); padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.9rem; }
+    pre { overflow-x: auto; white-space: pre-wrap; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/discover">Discover</a>
+    <a href="/models">My Models</a>
+    <a href="/settings">Settings</a>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  {% block script %}{% endblock %}
+</body>
+</html>

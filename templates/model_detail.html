@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ repo_id }} – LLM Manager{% endblock %}
+{% block content %}
+<h1>{{ repo_id }}</h1>
+<p><a href="https://huggingface.co/{{ repo_id }}" target="_blank" rel="noopener">View on Hugging Face</a></p>
+
+{% if model_card %}
+<div class="card">
+  <h2 style="font-size: 1.1rem;">Model card</h2>
+  <pre class="model-card-content" style="max-height: 320px; overflow-y: auto; white-space: pre-wrap;">{{ model_card | e }}</pre>
+  <p class="muted">Rendered as plain text; see link above for full markdown.</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="font-size: 1.1rem;">Quantizations (GGUF files)</h2>
+  {% if gguf_files %}
+  <ul style="list-style: none; padding: 0;">
+    {% for f in gguf_files %}
+    <li style="margin-bottom: 0.5rem;">
+      <code>{{ f }}</code>
+      <button type="button" class="btn btn-download" data-repo="{{ repo_id }}" data-filename="{{ f }}" style="margin-left: 0.5rem;">Download</button>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="muted">After download, the model is added to <code>models.ini</code> with recommended parameters. You can edit them under My Models.</p>
+  {% else %}
+  <p class="muted">No .gguf files found in this repo.</p>
+  {% endif %}
+</div>
+
+<div id="download-status" class="card" style="display: none;">
+  <p id="download-status-text"></p>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+document.querySelectorAll('.btn-download').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var repo = btn.dataset.repo;
+    var filename = btn.dataset.filename;
+    var statusEl = document.getElementById('download-status');
+    var textEl = document.getElementById('download-status-text');
+    statusEl.style.display = 'block';
+    textEl.textContent = 'Starting download...';
+    fetch('/api/download?repo_id=' + encodeURIComponent(repo) + '&filename=' + encodeURIComponent(filename), { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var jobId = data.job_id;
+        function poll() {
+          fetch('/api/download/' + encodeURIComponent(jobId))
+            .then(function(r) { return r.json(); })
+            .then(function(s) {
+              if (s.status === 'completed') {
+                textEl.textContent = 'Downloaded to: ' + (s.path || '');
+              } else if (s.status === 'failed') {
+                textEl.textContent = 'Failed: ' + (s.error || '');
+              } else {
+                textEl.textContent = 'Downloading...';
+                setTimeout(poll, 1500);
+              }
+            });
+        }
+        poll();
+      })
+      .catch(function(e) {
+        textEl.textContent = 'Error: ' + e.message;
+      });
+  });
+});
+</script>
+{% endblock %}

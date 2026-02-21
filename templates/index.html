@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}LLM Manager – Home{% endblock %}
+{% block content %}
+<h1>LLM Manager</h1>
+<p>Manage GGUF models for llama.cpp: search Hugging Face, download quantizations, and maintain <code>models.ini</code>.</p>
+<ul>
+  <li><a href="/discover">Discover</a> – Search and browse GGUF models on Hugging Face</li>
+  <li><a href="/models">My Models</a> – View and edit models in <code>models.ini</code></li>
+  <li><a href="/settings">Settings</a> – Port and models directory</li>
+</ul>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ section_name }} – LLM Manager{% endblock %}
+{% block content %}
+<h1>Edit model: {{ section_name }}</h1>
+<p class="muted">These parameters are written as <code>LLAMA_ARG_*</code> in models.ini for llama.cpp server.</p>
+<form method="post" action="/models/edit/{{ section_name | urlencode }}">
+  <div class="card">
+    {% for key, value in params.items() %}
+    <div style="margin-bottom: 0.75rem;">
+      <label for="param_{{ key }}"><code>{{ key }}</code></label>
+      <input type="text" id="param_{{ key }}" name="param_{{ key }}" value="{{ value }}" style="display: block; width: 100%; max-width: 480px; margin-top: 0.25rem;">
+    </div>
+    {% endfor %}
+  </div>
+  <div style="margin-top: 1rem;">
+    <label>Add parameter (optional)</label>
+    <input type="text" name="new_param_key" placeholder="e.g. LLAMA_ARG_N_CTX" style="margin-right: 0.5rem;">
+    <input type="text" name="new_param_value" placeholder="value">
+  </div>
+  <p class="muted" style="margin-top: 0.5rem;">Common keys: LLAMA_ARG_N_CTX (context size), LLAMA_ARG_N_GPU_LAYERS (-1 = all), LLAMA_ARG_MODEL (path to .gguf), LLAMA_ARG_BATCH, LLAMA_ARG_THREADS.</p>
+  <button type="submit">Save</button>
+  <a href="/models" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}
