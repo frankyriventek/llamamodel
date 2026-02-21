@@ -9,8 +9,8 @@
     top: 48px;
     bottom: 0;
     display: grid;
-    /* left=20%, center=70%, right=10% */
-    grid-template-columns: 20% 70% 10%;
+    /* left=35%, center=60%, right=5% */
+    grid-template-columns: 35% 60% 5%;
     grid-template-rows: 85% 15%;
     grid-template-areas:
       "pane-left pane-center pane-right"
@@ -88,9 +88,9 @@
   .model-card-html code { padding: 0.15rem 0.35rem; }
   .model-card-html ul, .model-card-html ol { margin: 0.5rem 0; padding-left: 1.5rem; }
   .model-card-html a { color: var(--accent); }
-  /* Scale images to fit the description pane */
+  /* Scale images to fit the description pane – max 75% of pane width */
   .model-card-html img {
-    max-width: 100%;
+    max-width: 75%;
     height: auto;
     display: block;
     margin: 0.5rem auto;
