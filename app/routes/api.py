@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import markdown
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 
@@ -37,33 +38,50 @@ async def api_search(
 
 @router.get("/model/{repo_id:path}")
 async def api_model_detail(repo_id: str):
-    """Get model card content and list of GGUF filenames."""
+    """Get model card (markdown + HTML), GGUF quantizations (grouped), and capabilities."""
     gguf_files = hf_service.list_gguf_files(repo_id)
+    quantizations = hf_service.group_gguf_by_quantization(gguf_files)
     model_card = hf_service.get_model_card_content(repo_id)
+    capabilities = hf_service.get_model_capabilities(repo_id)
+    model_card_html = ""
+    if model_card:
+        model_card_html = markdown.markdown(model_card, extensions=["extra", "nl2br"])
     return {
         "repo_id": repo_id,
         "gguf_files": gguf_files,
+        "quantizations": quantizations,
         "model_card": model_card,
+        "model_card_html": model_card_html,
+        "capabilities": capabilities,
     }
 
 
 @router.post("/download")
 async def api_download(
     repo_id: str,
-    filename: str,
+    filename: str | None = None,
+    filenames: str | None = None,
     section_name: str | None = None,
     background_tasks: BackgroundTasks = None,  # FastAPI injects when no default
 ):
     """
-    Start download of a GGUF file. Returns job_id. Poll GET /api/download/{job_id} for status.
-    On success, adds/updates models.ini with recommended params.
+    Start download of one or more GGUF files (multifile model). Pass filename= or filenames= comma-separated.
+    Returns job_id. Poll GET /api/download/{job_id} for status.
+    On success, adds/updates models.ini with path to the first file.
     """
-    if not filename.endswith(".gguf"):
-        raise HTTPException(status_code=400, detail="Only .gguf files allowed")
+    if filenames:
+        to_download = [f.strip() for f in filenames.split(",") if f.strip()]
+    elif filename:
+        to_download = [filename.strip()]
+    else:
+        raise HTTPException(status_code=400, detail="Provide filename= or filenames=")
+    for f in to_download:
+        if not f.endswith(".gguf"):
+            raise HTTPException(status_code=400, detail="Only .gguf files allowed")
     config = get_config()
     models_dir = Path(config["models_dir"])
     models_dir.mkdir(parents=True, exist_ok=True)
-    job_id = f"{repo_id}:{filename}"  # simple id
+    job_id = f"{repo_id}:{to_download[0]}"
     _download_jobs[job_id] = {"status": "running", "path": None, "error": None}
 
     def run_download():
@@ -71,21 +89,23 @@ async def api_download(
             env_before = os.environ.get("HF_HOME")
             os.environ["HF_HOME"] = str(models_dir)
             try:
-                path = hf_service.download_model(repo_id, filename, models_dir)
+                first_path = None
+                for fn in to_download:
+                    path = hf_service.download_model(repo_id, fn, models_dir)
+                    if first_path is None:
+                        first_path = path
             finally:
                 if env_before is None:
                     os.environ.pop("HF_HOME", None)
                 else:
                     os.environ["HF_HOME"] = env_before
-            _download_jobs[job_id]["path"] = str(path)
+            _download_jobs[job_id]["path"] = str(first_path)
             _download_jobs[job_id]["status"] = "completed"
-            # Add to models.ini with recommended params
             model_card = hf_service.get_model_card_content(repo_id)
             recommended = params_parser.recommended_params_with_defaults(model_card)
-            section = section_name or _sanitize_section_name(repo_id, filename)
+            section = section_name or _sanitize_section_name(repo_id, to_download[0])
             ini_path = get_models_ini_path(models_dir)
-            # Use path to local file; llama.cpp server may accept path or HF repo
-            recommended["LLAMA_ARG_MODEL"] = str(path)
+            recommended["LLAMA_ARG_MODEL"] = str(first_path)
             ini_manager.add_or_update_section(ini_path, section, recommended, merge=True)
         except Exception as e:
             _download_jobs[job_id]["status"] = "failed"

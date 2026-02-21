@@ -1,22 +1,296 @@
 {% extends "base.html" %}
 {% block title %}Discover – LLM Manager{% endblock %}
+{% block head %}
+<style>
+  .discover-layout {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 48px;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: 25% 60% 15%;
+    grid-template-rows: 85% 15%;
+    grid-template-areas:
+      "pane-left pane-center pane-right"
+      "pane-left pane-bottom pane-bottom";
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .discover-pane {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--muted);
+    margin: 2px;
+    border-radius: 6px;
+    background: var(--card);
+  }
+  .pane-left   { grid-area: pane-left;   }
+  .pane-center { grid-area: pane-center; }
+  .pane-right  { grid-area: pane-right;  }
+  .pane-bottom { grid-area: pane-bottom; }
+  .pane-left .pane-body   { overflow-y: auto; flex: 1; }
+  .pane-center .pane-body { overflow-y: auto; flex: 1; padding: 1rem; }
+  .pane-right .pane-body  { overflow-y: auto; flex: 1; padding: 0.5rem; }
+  .pane-bottom .pane-body { overflow-y: auto; flex: 1; padding: 0.5rem; font-size: 0.9rem; }
+  .pane-title {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    border-bottom: 1px solid var(--muted);
+  }
+  .search-form { padding: 0.5rem 0.75rem; flex-shrink: 0; }
+  .search-form input { width: 100%; }
+  .model-result {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .model-result:hover { background: var(--bg); }
+  .model-result.selected { background: var(--accent); color: var(--bg); }
+  .model-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-size { color: var(--muted); font-size: 0.85em; margin-right: 0.25rem; }
+  .cap-icon { width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
+  .cap-icon.lit { color: var(--accent); opacity: 1; }
+  .cap-icon.muted { color: var(--muted); opacity: 0.35; }
+  .quant-btn {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.35rem;
+    padding: 0.4rem 0.5rem;
+    text-align: left;
+    font-size: 0.85rem;
+  }
+  .download-job { margin-bottom: 0.25rem; padding: 0.25rem 0; border-bottom: 1px solid var(--muted); }
+  .download-job.error { color: #f7768e; }
+  .download-job.done { color: #9ece6a; }
+  .center-placeholder, .right-placeholder { color: var(--muted); padding: 1rem; text-align: center; }
+  .model-card-html { line-height: 1.5; }
+  .model-card-html h1, .model-card-html h2, .model-card-html h3 { margin-top: 1rem; margin-bottom: 0.5rem; }
+  .model-card-html pre { padding: 0.75rem; overflow-x: auto; }
+  .model-card-html code { padding: 0.15rem 0.35rem; }
+  .model-card-html ul, .model-card-html ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+  .model-card-html a { color: var(--accent); }
+</style>
+{% endblock %}
 {% block content %}
-<h1>Discover GGUF models</h1>
-<form method="get" action="/discover" style="margin-bottom: 1rem;">
-  <input type="text" name="q" value="{{ query }}" placeholder="Search Hugging Face (e.g. llama, mistral)" style="min-width: 280px;">
-  <button type="submit">Search</button>
-</form>
-{% if models %}
-<ul style="list-style: none; padding: 0;">
-  {% for m in models %}
-  <li class="card">
-    <a href="/model/{{ m.id }}"><strong>{{ m.id }}</strong></a>
-    <span class="muted"> · {{ m.downloads }} downloads</span>
-    <p class="muted" style="margin: 0.25rem 0 0;">{{ m.author }}</p>
-  </li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="muted">No models found. Try a different search or browse without a query.</p>
-{% endif %}
+<div class="discover-layout" id="discover-layout">
+  <div class="discover-pane pane-left">
+    <div class="pane-title">Models</div>
+    <div class="search-form">
+      <input type="text" id="search-input" placeholder="Search Hugging Face (e.g. llama, mistral)" value="{{ query }}">
+      <button type="button" id="search-btn" class="btn" style="margin-top: 0.35rem;">Search</button>
+    </div>
+    <div class="pane-body" id="search-results">
+      <p class="muted" style="padding: 0.75rem;">Loading most downloaded models…</p>
+    </div>
+  </div>
+  <div class="discover-pane pane-center">
+    <div class="pane-title">Description</div>
+    <div class="pane-body" id="center-content">
+      <p class="center-placeholder">Select a model from the list to view its description.</p>
+    </div>
+  </div>
+  <div class="discover-pane pane-right">
+    <div class="pane-title">Quantizations</div>
+    <div class="pane-body" id="right-content">
+      <p class="right-placeholder">Select a model to see available quantizations.</p>
+    </div>
+  </div>
+  <div class="discover-pane pane-bottom">
+    <div class="pane-title">Download status</div>
+    <div class="pane-body" id="bottom-content">
+      <p class="muted" style="margin: 0;">No active downloads.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+(function() {
+  var searchInput = document.getElementById('search-input');
+  var searchBtn = document.getElementById('search-btn');
+  var searchResults = document.getElementById('search-results');
+  var centerContent = document.getElementById('center-content');
+  var rightContent = document.getElementById('right-content');
+  var bottomContent = document.getElementById('bottom-content');
+
+  function modelName(id) {
+    return id.indexOf('/') >= 0 ? id.split('/').slice(-1)[0] : id;
+  }
+  function displayName(m) {
+    return m.repo_name || modelName(m.id);
+  }
+  function escapeHtml(s) {
+    var div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+  function stripQuantization(filename) {
+    var base = filename.replace(/\.gguf$/i, '');
+    var parts = base.split('-');
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var p = parts[i];
+      if (/^Q\d/i.test(p)) return p.toUpperCase();
+      if (/^FP\d+$/i.test(p)) return p.toUpperCase();
+      if (/^F\d+$/i.test(p)) return p.toUpperCase();
+      if (/^IQ\d/i.test(p)) return p.toUpperCase();
+      if (/^BF\d+$/i.test(p)) return p.toUpperCase();
+    }
+    return '';
+  }
+  function capIcon(name, enabled) {
+    var title = name === 'vision' ? 'Vision' : name === 'tools' ? 'Tool use' : 'Thinking';
+    var svg = name === 'vision' ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' :
+      name === 'tools' ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>' :
+      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>';
+    return '<span class="cap-icon ' + (enabled ? 'lit' : 'muted') + '" title="' + title + '">' + svg + '</span>';
+  }
+  function runSearch() {
+    var q = searchInput.value.trim();
+    var limit = q ? 30 : 20;
+    searchResults.innerHTML = '<p class="muted" style="padding: 0.75rem;">Searching…</p>';
+    fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=' + limit)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.models || data.models.length === 0) {
+          searchResults.innerHTML = '<p class="muted" style="padding: 0.75rem;">No models found. Try a different search.</p>';
+          return;
+        }
+        var html = '';
+        data.models.forEach(function(m) {
+          var size = (m.size_display || '').trim();
+          var sizePrefix = size ? '<span class="model-size">' + escapeHtml(size) + '</span> ' : '';
+          var name = displayName(m);
+          var owner = m.author || (m.id.indexOf('/') >= 0 ? m.id.split('/')[0] : '');
+          var ownerSuffix = owner ? ' <span class="muted">(' + escapeHtml(owner) + ')</span>' : '';
+          var caps = (m.vision ? capIcon('vision', true) : capIcon('vision', false)) +
+            (m.tools ? capIcon('tools', true) : capIcon('tools', false)) +
+            (m.thinking ? capIcon('thinking', true) : capIcon('thinking', false));
+          html += '<div class="model-result" data-repo="' + (m.id).replace(/"/g, '&quot;') + '" title="' + (m.id).replace(/"/g, '&quot;') + '"><span class="model-name">' + sizePrefix + escapeHtml(name) + ownerSuffix + '</span>' + caps + '</div>';
+        });
+        searchResults.innerHTML = html;
+        searchResults.querySelectorAll('.model-result').forEach(function(el) {
+          el.addEventListener('click', function() { selectModel(el.dataset.repo); });
+        });
+      })
+      .catch(function(e) {
+        searchResults.innerHTML = '<p class="muted" style="padding: 0.75rem;">Error: ' + e.message + '</p>';
+      });
+  }
+  function selectModel(repoId) {
+    searchResults.querySelectorAll('.model-result').forEach(function(el) {
+      el.classList.toggle('selected', el.dataset.repo === repoId);
+    });
+    centerContent.innerHTML = '<p class="muted" style="padding: 1rem;">Loading…</p>';
+    rightContent.innerHTML = '<p class="muted" style="padding: 0.5rem;">Loading…</p>';
+    fetch('/api/model/' + encodeURIComponent(repoId))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        centerContent.innerHTML = data.model_card_html
+          ? '<div class="model-card-html">' + data.model_card_html + '</div>'
+          : '<p class="center-placeholder">No description.</p>';
+        if (data.quantizations && data.quantizations.length) {
+          var html = '';
+          data.quantizations.forEach(function(entry) {
+            var label = entry.quant || stripQuantization(entry.primary_file);
+            var allFiles = entry.all_files || [entry.primary_file];
+            var allFilesStr = allFiles.join(',');
+            html += '<button type="button" class="btn quant-btn" data-repo="' + escapeHtml(data.repo_id) + '" data-filenames="' + escapeHtml(allFilesStr) + '">' + escapeHtml(label) + '</button>';
+          });
+          rightContent.innerHTML = html;
+          rightContent.querySelectorAll('.quant-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() { startDownload(btn.dataset.repo, btn.dataset.filenames); });
+          });
+        } else if (data.gguf_files && data.gguf_files.length) {
+          var html = '';
+          data.gguf_files.forEach(function(f) {
+            var label = stripQuantization(f);
+            if (!label) label = f.replace(/\.gguf$/i, '').split('-').pop() || f;
+            html += '<button type="button" class="btn quant-btn" data-repo="' + (data.repo_id).replace(/"/g, '&quot;') + '" data-filenames="' + escapeHtml(f) + '">' + escapeHtml(label) + '</button>';
+          });
+          rightContent.innerHTML = html;
+          rightContent.querySelectorAll('.quant-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() { startDownload(btn.dataset.repo, btn.dataset.filenames); });
+          });
+        } else {
+          rightContent.innerHTML = '<p class="right-placeholder">No .gguf files.</p>';
+        }
+      })
+      .catch(function(e) {
+        centerContent.innerHTML = '<p class="muted">Error: ' + e.message + '</p>';
+        rightContent.innerHTML = '<p class="right-placeholder">Error loading model.</p>';
+      });
+  }
+  var downloadEntries = [];
+  function startDownload(repoId, filenamesStr) {
+    var filenames = (filenamesStr || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    if (filenames.length === 0) return;
+    var firstFile = filenames[0];
+    var quantLabel = stripQuantization(firstFile) || firstFile.replace(/\.gguf$/i, '');
+    var label = quantLabel + ' – ' + modelName(repoId);
+    var qs = 'repo_id=' + encodeURIComponent(repoId);
+    if (filenames.length === 1) {
+      qs += '&filename=' + encodeURIComponent(filenames[0]);
+    } else {
+      qs += '&filenames=' + encodeURIComponent(filenames.join(','));
+    }
+    fetch('/api/download?' + qs, { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var jobId = data.job_id;
+        downloadEntries.push({ jobId: jobId, label: label });
+        renderBottom();
+        pollJob(jobId);
+      })
+      .catch(function(e) { appendBottom('Error: ' + e.message, true); });
+  }
+  function pollJob(jobId) {
+    fetch('/api/download/' + encodeURIComponent(jobId))
+      .then(function(r) { return r.json(); })
+      .then(function(s) {
+        var entry = downloadEntries.find(function(e) { return e.jobId === jobId; });
+        if (entry) {
+          entry.status = s.status;
+          entry.path = s.path;
+          entry.error = s.error;
+        }
+        renderBottom();
+        if (s.status === 'running') setTimeout(function() { pollJob(jobId); }, 1500);
+      });
+  }
+  function appendBottom(text, isError) {
+    var p = document.createElement('p');
+    p.className = 'download-job' + (isError ? ' error' : '');
+    p.textContent = text;
+    bottomContent.appendChild(p);
+  }
+  function renderBottom() {
+    var html = '';
+    downloadEntries.forEach(function(e) {
+      var cls = 'download-job';
+      var text = e.label + ': ';
+      if (e.status === 'completed') {
+        cls += ' done';
+        text += (e.path || 'Done.');
+      } else if (e.status === 'failed') {
+        cls += ' error';
+        text += (e.error || 'Failed.');
+      } else {
+        text += 'Downloading…';
+      }
+      html += '<div class="' + cls + '">' + text + '</div>';
+    });
+    if (!html) html = '<p class="muted" style="margin: 0;">No active downloads.</p>';
+    bottomContent.innerHTML = html;
+  }
+  searchBtn.addEventListener('click', runSearch);
+  searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') runSearch(); });
+  runSearch();
+})();
+</script>
 {% endblock %}
