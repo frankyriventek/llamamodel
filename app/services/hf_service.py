@@ -58,34 +58,121 @@ def _with_retry(fn, *args, **kwargs):
     raise last_exc  # unreachable but satisfies type checkers
 
 
+# Tags that indicate a real text-generation / LLM model (not a dataset, embedding, etc.)
+_LLM_PIPELINE_TAGS = {
+    "text-generation",
+    "text2text-generation",
+    "conversational",
+    "question-answering",
+    "summarization",
+    "translation",
+    "fill-mask",
+}
+
+# Tags that indicate the repo is NOT a standalone LLM (skip these)
+_SKIP_TAGS = {
+    "dataset",
+    "datasets",
+    "embedding",
+    "sentence-similarity",
+    "feature-extraction",
+    "image-classification",
+    "object-detection",
+    "audio",
+    "speech",
+    "automatic-speech-recognition",
+    "text-to-speech",
+    "image-to-text",
+    "text-to-image",
+    "image-to-image",
+    "video",
+    "reinforcement-learning",
+    "robotics",
+}
+
+
+def _is_real_llm_model(m: Any) -> bool:
+    """
+    Return True if the model object looks like a real LLM / chat model.
+    Filters out datasets, embedding models, ASR, image models, etc.
+    """
+    tags_raw = getattr(m, "tags", None) or []
+    tags = {t.lower() for t in tags_raw} if isinstance(tags_raw, (list, tuple)) else set()
+
+    # If any skip tag is present, exclude
+    if tags & _SKIP_TAGS:
+        return False
+
+    # pipeline_tag is the most reliable signal
+    pipeline_tag = (getattr(m, "pipeline_tag", None) or "").lower()
+    if pipeline_tag and pipeline_tag not in _LLM_PIPELINE_TAGS:
+        # Allow empty pipeline_tag (many GGUF repos don't set it)
+        # but reject known non-LLM pipelines
+        return False
+
+    # Must have at least one GGUF file indicator: either the "gguf" tag or the filter already
+    # ensures it, but double-check the repo isn't a pure dataset repo
+    model_id_lower = m.id.lower()
+    if model_id_lower.startswith("datasets/"):
+        return False
+
+    return True
+
+
 def _infer_capabilities_from_text(text: str, model_id: str) -> dict[str, bool]:
     """Infer vision, tools, thinking from model id and/or card text."""
     s = (text or "").lower() + " " + (model_id or "").lower()
     return {
-        "vision": "vision" in s or "visual" in s or "vlm" in s or "multimodal" in s or "image-text" in s,
-        "tools": (
-            "tool" in s or "function call" in s or "function_call" in s or "function-call" in s
-            or "tool-calling" in s or "tool_calling" in s or "tool-use" in s or "tool_use" in s
-            or "tool use" in s or "agent" in s
+        "vision": (
+            "vision" in s or "visual" in s or "vlm" in s or "multimodal" in s
+            or "image-text" in s or "image understanding" in s or "image input" in s
         ),
-        "thinking": "thinking" in s or "reasoning" in s or "deepseek" in s or "r1" in s,
+        "tools": (
+            "tool call" in s or "tool use" in s or "tool_use" in s
+            or "function call" in s or "function_call" in s or "function-call" in s
+            or "tool-calling" in s or "tool_calling" in s or "tool-use" in s
+            or "function calling" in s or "function-calling" in s
+        ),
+        "thinking": (
+            "thinking" in s or "<think>" in s or "chain-of-thought" in s
+            or "chain of thought" in s or "step-by-step reasoning" in s
+        ),
     }
 
 
 def _infer_capabilities_from_tags(tags: list[str] | None) -> dict[str, bool]:
-    """Infer vision, tools, thinking from Hugging Face model tags."""
+    """
+    Infer vision, tools, thinking from Hugging Face model tags.
+    Uses exact tag matching for high-confidence signals.
+    """
     if not tags:
         return {"vision": False, "tools": False, "thinking": False}
-    t = " ".join(t.lower() for t in tags)
-    return {
-        "vision": "vision" in t or "multimodal" in t or "image-text" in t or "vlm" in t,
-        "tools": (
-            "tool" in t or "function-call" in t or "function-calling" in t
-            or "tool-calling" in t or "tool_calling" in t or "tool-use" in t or "tool_use" in t
-            or "tool use" in t or "agent" in t
-        ),
-        "thinking": "thinking" in t or "reasoning" in t or "reasoner" in t,
-    }
+    tag_set = {t.lower() for t in tags}
+    t = " ".join(tag_set)
+
+    vision = (
+        "vision" in tag_set
+        or "multimodal" in tag_set
+        or "image-text-to-text" in tag_set
+        or "visual-question-answering" in tag_set
+        or "vlm" in tag_set
+        or "image-text" in t
+    )
+    tools = (
+        "function-calling" in tag_set
+        or "tool-calling" in tag_set
+        or "tool-use" in tag_set
+        or "function_calling" in tag_set
+        or "tool_calling" in tag_set
+        or "tool_use" in tag_set
+    )
+    thinking = (
+        "thinking" in tag_set
+        or "reasoning" in tag_set
+        or "chain-of-thought" in tag_set
+        or "cot" in tag_set
+    )
+    return {"vision": vision, "tools": tools, "thinking": thinking}
 
 
 def _repo_name(model_id: str) -> str:
@@ -257,16 +344,25 @@ def search_models(
     offset: int = 0,
     sort: str = "downloads",
 ) -> list[dict[str, Any]]:
-    """Search for GGUF models. Returns list of {id, repo_name, author, downloads, capabilities, ...}."""
+    """
+    Search for GGUF models on Hugging Face.
+    Returns list of {id, repo_name, author, downloads, likes, size_display, vision, tools, thinking}.
+
+    Filtering: only real LLM/chat model repos are returned (datasets, embedding models,
+    ASR, image models etc. are excluded via _is_real_llm_model()).
+    Sort: always by downloads descending (HF API default for sort="downloads").
+    """
     api = _get_api()
-    full_limit = offset + limit
+    # Fetch more than needed to compensate for filtered-out non-LLM repos
+    fetch_limit = min((offset + limit) * 3, 200)
 
     def _do_list_models(full: bool):
         return list(api.list_models(
             filter="gguf",
             search=query or "",
-            sort=sort,
-            limit=min(full_limit, 100),
+            sort="downloads",          # always sort by downloads descending
+            direction=-1,              # descending
+            limit=fetch_limit,
             **({"full": True} if full else {}),
         ))
 
@@ -275,43 +371,56 @@ def search_models(
     except TypeError:
         raw = _with_retry(_do_list_models, False)
 
+    # Filter to real LLM repos and apply offset/limit
     items = []
-    for i, m in enumerate(raw):
-        if i < offset:
+    skipped = 0
+    for m in raw:
+        if not _is_real_llm_model(m):
+            logger.debug("Skipping non-LLM repo: %s (pipeline_tag=%s)", m.id, getattr(m, "pipeline_tag", None))
+            continue
+        if skipped < offset:
+            skipped += 1
             continue
         if len(items) >= limit:
             break
-        tags = getattr(m, "tags", None) or []
-        if isinstance(tags, (list, tuple)):
-            tags_list = list(tags)
-            caps_from_tags = _infer_capabilities_from_tags(tags_list)
-        else:
-            tags_list = []
-            caps_from_tags = {"vision": False, "tools": False, "thinking": False}
-        caps_from_id = _infer_capabilities_from_text("", m.id)
-        caps = {
-            "vision": caps_from_tags["vision"] or caps_from_id["vision"],
-            "tools": caps_from_tags["tools"] or caps_from_id["tools"],
-            "thinking": caps_from_tags["thinking"] or caps_from_id["thinking"],
+
+        tags_raw = getattr(m, "tags", None) or []
+        tags_list = list(tags_raw) if isinstance(tags_raw, (list, tuple)) else []
+
+        # Capabilities: tags are most reliable; fall back to model id text
+        caps_from_tags = _infer_capabilities_from_tags(tags_list)
+        # Also check pipeline_tag for vision
+        pipeline_tag = (getattr(m, "pipeline_tag", None) or "").lower()
+        vision_from_pipeline = pipeline_tag in {
+            "image-text-to-text", "visual-question-answering", "image-to-text",
         }
+        caps = {
+            "vision": caps_from_tags["vision"] or vision_from_pipeline or _infer_capabilities_from_text("", m.id)["vision"],
+            "tools": caps_from_tags["tools"] or _infer_capabilities_from_text("", m.id)["tools"],
+            "thinking": caps_from_tags["thinking"] or _infer_capabilities_from_text("", m.id)["thinking"],
+        }
+
         repo_name = _repo_name(m.id)
 
-        # Parameter count: try tags first, then repo name, then safetensors metadata
-        size_display = _parse_size_from_tags(tags_list)
+        # Parameter count priority:
+        # 1. safetensors.total (most accurate, integer param count)
+        # 2. HF tags (e.g. "7b", "13b")
+        # 3. repo name text
+        # 4. full model id text
+        size_display = ""
+        try:
+            st = getattr(m, "safetensors", None)
+            if st:
+                total = getattr(st, "total", None)
+                if total and int(total) > 0:
+                    size_display = _format_param_count(int(total))
+        except Exception:
+            pass
+        if not size_display:
+            size_display = _parse_size_from_tags(tags_list)
         if not size_display:
             size_display = _parse_size_from_repo(repo_name)
         if not size_display:
-            # Try safetensors total parameter count if available
-            try:
-                st = getattr(m, "safetensors", None)
-                if st and hasattr(st, "total"):
-                    total = st.total
-                    if total:
-                        size_display = _format_param_count(int(total))
-            except Exception:
-                pass
-        if not size_display:
-            # Last resort: search the full model id string
             size_display = _parse_size_from_text(m.id)
 
         items.append({
@@ -325,6 +434,11 @@ def search_models(
             "tools": caps["tools"],
             "thinking": caps["thinking"],
         })
+
+    logger.debug(
+        "search_models(q=%r, limit=%d, offset=%d): returned %d items from %d raw",
+        query, limit, offset, len(items), len(raw),
+    )
     return items
 
 
