@@ -9,8 +9,8 @@
     top: 48px;
     bottom: 0;
     display: grid;
-    /* left=35%, center=60%, right=5% */
-    grid-template-columns: 35% 60% 5%;
+    /* left=30%, center=60%, right=10% */
+    grid-template-columns: 30% 60% 10%;
     grid-template-rows: 85% 15%;
     grid-template-areas:
       "pane-left pane-center pane-right"
@@ -96,6 +96,22 @@
     margin: 0.5rem auto;
     border-radius: 4px;
   }
+  /* Model header in description pane */
+  .model-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--muted);
+  }
+  .model-header h2 { margin: 0 0 0.25rem; font-size: 1.15rem; }
+  .model-header .model-meta { font-size: 0.85rem; color: var(--muted); display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+  .model-header .param-badge {
+    background: var(--accent);
+    color: var(--bg);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
   /* Tables in model cards */
   .model-card-html table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; font-size: 0.9rem; }
   .model-card-html th, .model-card-html td { border: 1px solid var(--muted); padding: 0.3rem 0.5rem; text-align: left; }
@@ -121,7 +137,7 @@
     </div>
   </div>
   <div class="discover-pane pane-right">
-    <div class="pane-title">Quantizations</div>
+    <div class="pane-title">Quants</div>
     <div class="pane-body" id="right-content">
       <p class="right-placeholder">Select a model to see available quantizations.</p>
     </div>
@@ -169,11 +185,28 @@
     return '';
   }
   function capIcon(name, enabled) {
-    var title = name === 'vision' ? 'Vision' : name === 'tools' ? 'Tool use' : 'Thinking';
-    var svg = name === 'vision' ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' :
-      name === 'tools' ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>' :
-      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>';
-    return '<span class="cap-icon ' + (enabled ? 'lit' : 'muted') + '" title="' + title + '">' + svg + '</span>';
+    var tooltips = {
+      vision: enabled ? 'Vision / multimodal (supports image input)' : 'No vision capability',
+      tools: enabled ? 'Tool use / function calling' : 'No tool use capability',
+      thinking: enabled ? 'Thinking / chain-of-thought reasoning' : 'No explicit reasoning mode',
+    };
+    var title = tooltips[name] || name;
+    var svg = name === 'vision'
+      ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>'
+      : name === 'tools'
+        ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>';
+    return '<span class="cap-icon ' + (enabled ? 'lit' : 'muted') + '" title="' + escapeHtml(title) + '">' + svg + '</span>';
+  }
+  function beautifyModelName(repoId, cardTitle) {
+    // Use card title if available, otherwise clean up repo name
+    if (cardTitle && cardTitle.trim()) return cardTitle.trim();
+    var name = repoId.indexOf('/') >= 0 ? repoId.split('/').slice(-1)[0] : repoId;
+    // Remove GGUF suffix (case-insensitive)
+    name = name.replace(/[-_]?GGUF$/i, '').replace(/[-_]?gguf$/i, '');
+    // Replace hyphens/underscores with spaces for readability
+    name = name.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+    return name;
   }
   function runSearch() {
     var q = searchInput.value.trim();
@@ -216,9 +249,25 @@
     fetch('/api/model/' + encodeURIComponent(repoId))
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        centerContent.innerHTML = data.model_card_html
+        // Build model header: beautified name, param count badge, HF link, capability icons
+        var displayTitle = beautifyModelName(repoId, data.model_title || '');
+        var paramBadge = (data.param_count || data.size_display || '')
+          ? '<span class="param-badge">' + escapeHtml(data.param_count || data.size_display || '') + '</span>'
+          : '';
+        var caps = data.capabilities || {};
+        var capIcons = capIcon('vision', !!caps.vision) + capIcon('tools', !!caps.tools) + capIcon('thinking', !!caps.thinking);
+        var hfLink = '<a href="https://huggingface.co/' + escapeHtml(repoId) + '" target="_blank" rel="noopener" style="font-size:0.85rem;">View on Hugging Face ↗</a>';
+        var header = '<div class="model-header">'
+          + '<h2>' + escapeHtml(displayTitle) + '</h2>'
+          + '<div class="model-meta">'
+          + (paramBadge ? paramBadge : '')
+          + capIcons
+          + hfLink
+          + '</div>'
+          + '</div>';
+        centerContent.innerHTML = header + (data.model_card_html
           ? '<div class="model-card-html">' + data.model_card_html + '</div>'
-          : '<p class="center-placeholder">No description.</p>';
+          : '<p class="center-placeholder">No description available.</p>');
         if (data.quantizations && data.quantizations.length) {
           var html = '';
           data.quantizations.forEach(function(entry) {

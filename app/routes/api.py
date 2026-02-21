@@ -43,22 +43,27 @@ async def api_search(
 
 @router.get("/model/{repo_id:path}")
 async def api_model_detail(repo_id: str):
-    """Get model card (markdown + HTML), GGUF quantizations (grouped with sizes), and capabilities."""
+    """Get model card (markdown + HTML), GGUF quantizations (grouped with sizes), capabilities, title, param_count."""
     logger.debug("GET /api/model/%s", repo_id)
     gguf_files = hf_service.list_gguf_files(repo_id)
     file_sizes = hf_service.get_repo_file_sizes(repo_id)
     quantizations = hf_service.group_gguf_by_quantization(gguf_files, file_sizes=file_sizes)
-    model_card = hf_service.get_model_card_content(repo_id)
+    card_info = hf_service.get_model_card_info(repo_id)
+    model_card = card_info["content"]
+    model_title = card_info["title"]
+    param_count = card_info["param_count"]
     capabilities = hf_service.get_model_capabilities(repo_id)
     model_card_html = ""
     if model_card:
         model_card_html = markdown.markdown(model_card, extensions=["extra", "nl2br"])
     logger.debug(
-        "GET /api/model/%s: %d gguf files, %d quant groups, card_len=%d",
-        repo_id, len(gguf_files), len(quantizations), len(model_card),
+        "GET /api/model/%s: %d gguf files, %d quant groups, card_len=%d, title=%r, params=%r",
+        repo_id, len(gguf_files), len(quantizations), len(model_card), model_title, param_count,
     )
     return {
         "repo_id": repo_id,
+        "model_title": model_title,
+        "param_count": param_count,
         "gguf_files": gguf_files,
         "quantizations": quantizations,
         "model_card": model_card,

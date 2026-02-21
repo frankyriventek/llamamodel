@@ -122,15 +122,10 @@ def _is_real_llm_model(m: Any) -> bool:
 def _infer_capabilities_from_text(text: str, model_id: str) -> dict[str, bool]:
     """Infer vision, tools, thinking from model id and/or card text."""
     s = (text or "").lower() + " " + (model_id or "").lower()
-    # Also check model_id separately for common naming patterns
-    mid = (model_id or "").lower()
     return {
         "vision": (
             "vision" in s or "visual" in s or "vlm" in s or "multimodal" in s
             or "image-text" in s or "image understanding" in s or "image input" in s
-            or "llava" in mid or "cogvlm" in mid or "internvl" in mid or "qwen-vl" in mid
-            or "pixtral" in mid or "cambrian" in mid or "xgen-mm" in mid or "phi-3-vision" in mid
-            or "idefics" in mid or "paligemma" in mid or "minicpm-v" in mid
         ),
         "tools": (
             "tool call" in s or "tool use" in s or "tool_use" in s
@@ -141,7 +136,6 @@ def _infer_capabilities_from_text(text: str, model_id: str) -> dict[str, bool]:
         "thinking": (
             "thinking" in s or "<think>" in s or "chain-of-thought" in s
             or "chain of thought" in s or "step-by-step reasoning" in s
-            or "deepseek-r1" in mid or "deepseek r1" in s or "r1-distill" in mid
         ),
     }
 
@@ -469,6 +463,66 @@ def get_model_card_content(repo_id: str) -> str:
         return card.content or ""
     except Exception:
         return ""
+
+
+def get_model_card_info(repo_id: str) -> dict[str, Any]:
+    """
+    Fetch model card and extract structured info:
+    - content: raw markdown
+    - title: model name from card metadata or first H1 heading
+    - param_count: parameter count string if found in card text
+    Returns dict with keys: content, title, param_count.
+    """
+    import re
+    content = ""
+    title = ""
+    param_count = ""
+    try:
+        card = _with_retry(ModelCard.load, repo_id)
+        content = card.content or ""
+        # Try card metadata (YAML front matter) for model_name or model-name
+        try:
+            data = card.data
+            if data:
+                title = (
+                    getattr(data, "model_name", None)
+                    or getattr(data, "model-name", None)
+                    or getattr(data, "title", None)
+                    or ""
+                )
+                if title:
+                    title = str(title).strip()
+        except Exception:
+            pass
+        # Fall back to first H1 heading in the markdown
+        if not title and content:
+            m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+            if m:
+                title = m.group(1).strip()
+                # Remove GGUF/gguf from title
+                title = re.sub(r"\s*[-–]?\s*GGUF\b", "", title, flags=re.IGNORECASE).strip()
+        # Extract parameter count from card text
+        from app.services.params_parser import parse_recommended_params
+        parsed = parse_recommended_params(content)
+        # Also try to find explicit param count patterns in card text
+        m2 = re.search(
+            r"(?:parameters?|params?|#\s*params?)\s*[:\-]?\s*(\d+\.?\d*)\s*([BbMmKk])",
+            content,
+        )
+        if m2:
+            val = m2.group(1)
+            unit = m2.group(2).upper()
+            if unit == "K":
+                unit = "K"
+            param_count = val + unit
+        if not param_count:
+            # Try safetensors-style count in card text
+            m3 = re.search(r"(\d+\.?\d*)\s*[Bb]\s+(?:parameter|param)", content)
+            if m3:
+                param_count = m3.group(1) + "B"
+    except Exception:
+        pass
+    return {"content": content, "title": title, "param_count": param_count}
 
 
 def get_model_capabilities(repo_id: str) -> dict[str, bool]:
