@@ -484,6 +484,16 @@
           var owner = m.author || (m.id.indexOf('/') >= 0 ? m.id.split('/')[0] : '');
           var ownerHtml = owner ? ' <span class="muted" style="font-size:0.78em;">(' + escapeHtml(owner) + ')</span>' : '';
           
+          // Capability icons lit from model data
+          var caps = '';
+          if (m.vision || m.tools || m.thinking) {
+            caps = '<span style="display: inline-flex; align-items: center; gap: 0.15rem; margin-left: 0.35rem; vertical-align: middle; flex-shrink: 0; position: relative; top: -1px;">' +
+                   (m.vision ? capIcon('vision', true) : '') +
+                   (m.tools ? capIcon('tools', true) : '') +
+                   (m.thinking ? capIcon('thinking', true) : '') +
+                   '</span>';
+          }
+
           // Description: truncate to 100 chars
           var desc = (m.short_desc || '').trim();
           if (desc.length > 100) desc = desc.slice(0, 97) + '…';
@@ -508,8 +518,9 @@
           
           html += '<div class="model-result" data-repo="' + (m.id).replace(/"/g, '&quot;') + '" title="' + (m.id).replace(/"/g, '&quot;') + '">'
             + '<div class="model-row" style="margin-bottom: 0.2rem; display: flex; align-items:center; gap: 0.35rem; width: 100%;">'
-            + '<span class="model-name" style="display: flex; align-items: center; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width: 0;">'
+            + '<span class="model-name" style="display: inline-flex; align-items: center; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width: 0;">'
             + '<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + sizeHtml + (sizeHtml ? ' ' : '') + nameLink + ownerHtml + '</span>'
+            + caps
             + '</span>'
             + likesHtml
             + '</div>'

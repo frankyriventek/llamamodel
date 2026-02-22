@@ -470,7 +470,7 @@ def search_models(
         tags_list = list(tags_raw) if isinstance(tags_raw, (list, tuple)) else []
         pipeline_tag = (getattr(m, "pipeline_tag", None) or "").lower()
 
-        # Capabilities: use tags (exact matching) + pipeline_tag + model id text
+        # Capabilities: use tags (exact matching) + pipeline_tag
         caps_from_tags = _infer_capabilities_from_tags(tags_list)
         vision_from_pipeline = pipeline_tag in {
             "image-text-to-text", "visual-question-answering", "image-to-text",
@@ -495,12 +495,13 @@ def search_models(
             "thinking" in id_lower or "qwq" in id_lower or "deepseek-r1" in id_lower
             or "o1" in id_lower or "skywork-o1" in id_lower
         )
-        caps = {
-            "vision": caps_from_tags["vision"] or vision_from_pipeline or vision_from_id,
-            "tools": caps_from_tags["tools"] or tools_from_id,
-            "thinking": caps_from_tags["thinking"] or thinking_from_id,
-        }
 
+        # Need `content` (model card) to reliably infer text-based capabilities inside search pane if basic checks skip it!
+        # Search API provides no `content`. So for missing capabilities in search listing, we fetch basic ModelCard parsing minimally via a shared path.
+        # But wait - we do NOT want to download the whole raw content loop here (too slow for lists).
+        # We assume tag-based + id-based (above) is comprehensive for search mode, while card-info expands it in detail mode. 
+        # BUT: It is critical we align how we set tools_from_id, vision_from_id, thinking_from_id here exactly with `get_model_card_info()`.
+        
         repo_name = _repo_name(m.id)
 
         # Parameter count priority:
@@ -540,6 +541,14 @@ def search_models(
                         short_desc = short_desc[:197] + "…"
         except Exception:
             pass
+
+        # Update text capabilities based on available description text
+        caps_from_text = _infer_capabilities_from_text(short_desc, m.id)
+        caps = {
+            "vision": caps_from_tags["vision"] or caps_from_text["vision"] or vision_from_pipeline or vision_from_id,
+            "tools": caps_from_tags["tools"] or caps_from_text["tools"] or tools_from_id,
+            "thinking": caps_from_tags["thinking"] or caps_from_text["thinking"] or thinking_from_id,
+        }
 
         # Classify tags into mandatory/core/optional
         classified_tags = _classify_tags(tags_list)
@@ -686,6 +695,8 @@ def get_model_card_info(repo_id: str) -> dict[str, Any]:
     caps_text = _infer_capabilities_from_text(content, repo_id)
     caps_tags = _infer_capabilities_from_tags(card_tags)
     id_lower = repo_id.lower()
+    
+    # Must explicitly match the search heuristic exactly to avoid desync
     vision_from_id = (
         "vision" in id_lower or "vlm" in id_lower or "visual" in id_lower
         or "llava" in id_lower or "qwen-vl" in id_lower or "internvl" in id_lower
@@ -702,6 +713,9 @@ def get_model_card_info(repo_id: str) -> dict[str, Any]:
         "thinking" in id_lower or "qwq" in id_lower or "deepseek-r1" in id_lower
         or "o1" in id_lower or "skywork-o1" in id_lower
     )
+
+    # Some models have `pipeline_tag` but are fetched here without it being immediately available in ModelCard explicitly
+    # We must lean back on the `caps_text` heavily and card tags for the detailed mapping.
 
     return {
         "content": content,
