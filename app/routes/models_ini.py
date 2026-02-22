@@ -159,7 +159,7 @@ async def edit_model_page(request: Request, section_name: str):
 
 
 @router.post("/edit/{section_name}")
-async def save_model(section_name: str, request: Request):
+async def save_model(section_name: str, request: Request, inline: int = 0):
     """Save model section from form. Form keys: param_<key> = value; optional new_param_key, new_param_value."""
     logger.debug("POST /models/edit/%s", section_name)
     path = _ini_path()
@@ -189,10 +189,23 @@ async def save_model(section_name: str, request: Request):
             ini_parser.defaults()[k] = v
         ini_manager.write_ini(path, ini_parser)
         logger.info("POST /models/edit/%s: saved general config %d params", section_name, len(params))
+        
+        # Determine if this was an inline save or an edit page save
+        if inline or "/models/edit/" not in request.headers.get("referer", ""):
+            # It was saved from the inline form on the main models page
+            return RedirectResponse(url="/models", status_code=303)
+            
         return RedirectResponse(url="/models", status_code=303)
 
+    # Standard model update
     ini_manager.set_section(path, section_name, params)
     logger.info("POST /models/edit/%s: saved %d params", section_name, len(params))
+    
+    # Check where the request came from so we redirect cleanly
+    if inline or "/models/edit/" not in request.headers.get("referer", ""):
+         # Came from the inline form, redirect straight back to /models page
+         return RedirectResponse(url="/models", status_code=303)
+         
     return RedirectResponse(url="/models", status_code=303)
 
 
