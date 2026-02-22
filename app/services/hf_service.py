@@ -691,6 +691,8 @@ def get_model_card_info(repo_id: str) -> dict[str, Any]:
         or "llava" in id_lower or "qwen-vl" in id_lower or "internvl" in id_lower
         or "minicpm-v" in id_lower or "phi-3-vision" in id_lower
         or "cogvlm" in id_lower or "moondream" in id_lower
+        or "-vl" in id_lower or "_vl" in id_lower or "/vl-" in id_lower
+        or id_lower.endswith("-vl") or id_lower.endswith("_vl")
     )
     tools_from_id = (
         "tool" in id_lower or "function" in id_lower

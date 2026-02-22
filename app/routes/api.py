@@ -122,6 +122,10 @@ async def api_model_detail(repo_id: str):
     quantizations = hf_service.group_gguf_by_quantization(gguf_files, file_sizes=file_sizes)
     card_info = hf_service.get_model_card_info(repo_id)
     model_card = card_info["content"]
+    # Strip leading tags lines from the raw model card content if they exist at the very beginning
+    # Some Hugging Face model cards include YAML-like YAML frontmatter block for tags/licenses right inside the markdown content.
+    if model_card:
+        model_card = re.sub(r"^---\n.*?\n---\n", "", model_card, flags=re.DOTALL)
     model_card_html = ""
     if model_card:
         model_card_html = markdown.markdown(model_card, extensions=["extra", "nl2br"])
