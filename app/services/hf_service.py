@@ -716,21 +716,80 @@ def download_model(
     filename: str,
     models_dir: Path | str,
     local_dir_override: Path | str | None = None,
+    job_id: str | None = None,
+    download_jobs_dict: dict | None = None
 ) -> Path:
     """
-    Download a GGUF file into the models directory safely preserving the HF Hub cache layout.
-    Returns path to the downloaded file.
+    Download a GGUF file chunk-by-chunk using requests into a structured layout:
+    models_dir / author_name / model_name / filename
     """
-    models_dir = Path(models_dir)
-    models_dir.mkdir(parents=True, exist_ok=True)
+    import os
+    import time
+    import requests
+    from huggingface_hub import hf_hub_url
     
-    # We use cache_dir=models_dir so HF properly tracks and chunks files safely
-    # This places models in models_dir/models--<repo_name>/snapshots/...
-    # local_dir strips directory structures which we want to explicitly avoid.
-    path = _with_retry(
-        hf_hub_download,
-        repo_id=repo_id,
-        filename=filename,
-        cache_dir=models_dir,
-    )
-    return Path(path)
+    models_dir = Path(models_dir)
+    # Parse author and model from repo_id
+    parts = repo_id.split('/')
+    if len(parts) == 2:
+        author, model_name = parts[0], parts[1]
+    else:
+        author, model_name = "unknown", repo_id
+        
+    target_dir = models_dir / author / model_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / filename
+    
+    # Simple check if fully downloaded (could compare sizes if we had total_size apriori)
+    if target_path.exists() and target_path.stat().st_size > 0:
+        pass # we will overwrite if requested, or the caller skips it.
+
+    tmp_path = target_path.with_suffix(target_path.suffix + ".download")
+    
+    url = hf_hub_url(repo_id=repo_id, filename=filename)
+    
+    # Download with progress
+    with requests.get(url, stream=True, allow_redirects=True) as r:
+        r.raise_for_status()
+        total_size = int(r.headers.get('content-length', 0))
+        
+        if download_jobs_dict is not None and job_id is not None:
+            if job_id in download_jobs_dict:
+                download_jobs_dict[job_id]["total_bytes"] = total_size
+                download_jobs_dict[job_id]["downloaded_bytes"] = 0
+                download_jobs_dict[job_id]["progress"] = 0
+                download_jobs_dict[job_id]["start_time"] = time.time()
+                download_jobs_dict[job_id]["speed"] = 0
+                download_jobs_dict[job_id]["eta"] = 0
+                
+        downloaded = 0
+        start_time = time.time()
+        
+        with open(tmp_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192*4):
+                if download_jobs_dict is not None and job_id is not None:
+                    # Check for cancellation
+                    if download_jobs_dict.get(job_id, {}).get("status") == "cancelled":
+                        tmp_path.unlink(missing_ok=True)
+                        raise Exception("Download cancelled by user")
+                        
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    if download_jobs_dict is not None and job_id is not None and job_id in download_jobs_dict:
+                        now = time.time()
+                        elapsed = now - start_time
+                        # throttle updates to avoid locking dict
+                        if elapsed > 0:
+                            speed = downloaded / elapsed
+                            eta = (total_size - downloaded) / speed if speed > 0 else 0
+                            
+                            job = download_jobs_dict[job_id]
+                            job["downloaded_bytes"] = downloaded
+                            job["speed"] = speed
+                            job["eta"] = eta
+                            job["progress"] = (downloaded / total_size * 100) if total_size > 0 else 0
+
+    tmp_path.rename(target_path)
+    return target_path

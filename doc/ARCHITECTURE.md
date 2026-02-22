@@ -71,3 +71,43 @@ flowchart LR
 1. **Discovery & Search**: User actions (typing a query, clicking a tag) route to `/api/search` via AJAX. The backend accesses Hugging Face using `HfApi()`, caching filters logically and mapping visual characteristics (vision, thinking, tools calling) back to UI-friendly payloads.
 2. **Model Download**: Triggers a background task calling `hf_hub_download` asynchronously. An in-memory status dictionary tracking the job gets polled by the client for updates.
 3. **models.ini Management**: On a successful download, the parameter parser evaluates the model card text and dynamically structures an INI configuration block ensuring the `LLAMA_ARG_MODEL` maps precisely to the newly grabbed disk file. Users optionally overwrite these mapped defaults in the "My Models" tab.
+
+## Proposed Download Mechanism Architecture
+
+### Requirements
+1. **Default Directory:** `$HOME/.cache/huggingface/models`
+2. **Directory Structure:** `author_name/model_name/` containing all quantizations for the model.
+3. **UI Download Pane:** Progress bar, model name, file size, ETA, cancel button.
+4. **Quantization Buttons UI:**
+    - Downloaded: Italic label, tooltip "Quantized model already downloaded"
+    - Not downloaded: Bold label, tooltip "Click to download Quantized Model"
+5. **Re-download Confirmation:** Prompt if attempting to download an already existing quantization.
+
+### Proposed Architecture
+
+#### 1. Backend Changes (`app/services/download_service.py` & `api.py`)
+- Natively `hf_hub_download` does not provide an async progress callback or an easy cancellation mechanism with chunk tracking.
+- To achieve real-time progress, ETA, and cancellation, we will implement a custom chunked downloader using the `requests` library (which is available as a dependency of `huggingface_hub`).
+- **URL Resolution:** We will use `huggingface_hub.hf_hub_url` to get the direct file URL for `repo_id` and `filename` or utilize `http_get` / HTTP requests wrapped with HF Hub tokens.
+- **Target Path Construction:** 
+    - The base download directory will be configured to default to `$HOME/.cache/huggingface/models`.
+    - `author_name`, `model_name` will be parsed from `repo_id` (e.g., `author/model` -> `author`, `model`).
+    - The final path will be `models_dir / author_name / model_name / filename`.
+- **Download State Tracking:**
+    - Maintain an in-memory dictionary `_download_jobs` to track global job states.
+    - Fields: `job_id`, `repo_id`, `filename`, `status` (running, cancelled, completed, failed), `total_bytes`, `downloaded_bytes`, `start_time`, `speed`, `eta`, `error`.
+    - An endpoint `/api/download/cancel/{job_id}` will transition the state to `cancelled`. The chunk loop will check this flag and abort cleanly, removing incomplete temporary files (`.download`).
+- **File Exist Check endpoint:** Add an API endpoint `GET /api/models/check?repo_id=...&filename=...` to check if a target quantization is already downloaded (by computing the target path and checking `os.path.exists`). 
+
+#### 2. Frontend Changes (`static/app.js` & `templates/`)
+- **Quantization Buttons:** 
+    - On model detail rendering, retrieve the list of already downloaded files.
+    - Conditionally apply CSS classes for bold (un-downloaded) or italic/cursive (downloaded), updating the `title` attributes (tooltips) respectively.
+    - Attach a click handler that checks the downloaded status. If downloaded, `confirm()` dialog pops up. If confirmed or not yet downloaded, initiate the POST to `/api/download`.
+- **Download Pane Component:**
+    - A fixed or floating pane detailing active downloads.
+    - Polling `/api/download/{job_id}` every ~500ms to update progress bars, speed, ETA, and downloaded/total bytes.
+    - Cancel button attached to each active job fires `/api/download/cancel/{job_id}`.
+
+### Directory Resolution Overriding existing HF Cache
+Instead of using Hugging Face's snapshot symlink structure (`models--author--model/snapshots/...`), we will write files linearly mapping the HF structure to standard user-friendly folders `/author/model/`.

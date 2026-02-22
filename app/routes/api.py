@@ -199,7 +199,13 @@ async def api_download(
             for fn in to_download:
                 logger.info("Downloading %s / %s …", repo_id, fn)
                 # Pass models_dir as the explicit cache_dir to properly organize the HF hub files
-                path = hf_service.download_model(repo_id, fn, models_dir)
+                path = hf_service.download_model(
+                    repo_id=repo_id, 
+                    filename=fn, 
+                    models_dir=models_dir,
+                    job_id=job_id,
+                    download_jobs_dict=_download_jobs
+                )
                 logger.info("Downloaded %s / %s → %s", repo_id, fn, path)
                 if first_path is None:
                     first_path = path
@@ -254,3 +260,29 @@ async def api_get_model(section_name: str):
     if params is None:
         raise HTTPException(status_code=404, detail="Model not found")
     return {"name": section_name, "params": params}
+
+@router.post("/download/cancel/{job_id:path}")
+async def api_download_cancel(job_id: str):
+    """Cancel a running download job."""
+    if job_id not in _download_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if _download_jobs[job_id]["status"] == "running":
+        _download_jobs[job_id]["status"] = "cancelled"
+    return {"status": "cancelling"}
+
+@router.get("/models/check")
+async def api_models_check(repo_id: str, filename: str):
+    """Check if a specific model quantization is already downloaded."""
+    config = get_config()
+    models_dir = Path(config["models_dir"])
+    
+    parts = repo_id.split('/')
+    if len(parts) == 2:
+        author, model_name = parts[0], parts[1]
+    else:
+        author, model_name = "unknown", repo_id
+        
+    target_path = models_dir / author / model_name / filename
+    
+    exists = target_path.exists() and target_path.stat().st_size > 0
+    return {"repo_id": repo_id, "filename": filename, "downloaded": exists}

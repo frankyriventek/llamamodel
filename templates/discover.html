@@ -555,18 +555,36 @@
         });
         if (data.quantizations && data.quantizations.length) {
           var html = '';
-          data.quantizations.forEach(function(entry) {
+          var htmlPromises = data.quantizations.map(function(entry) {
             var label = entry.quant || stripQuantization(entry.primary_file);
             var allFiles = entry.all_files || [entry.primary_file];
             var allFilesStr = allFiles.join(',');
             var sizeHtml = entry.total_size_display
               ? '<span class="quant-size">' + escapeHtml(entry.total_size_display) + '</span>'
               : '';
-            html += '<button type="button" class="btn quant-btn" data-repo="' + escapeHtml(data.repo_id) + '" data-filenames="' + escapeHtml(allFilesStr) + '">' + escapeHtml(label) + sizeHtml + '</button>';
+              
+            return fetch('/api/models/check?repo_id=' + encodeURIComponent(data.repo_id) + '&filename=' + encodeURIComponent(allFiles[0]))
+              .then(r => r.json())
+              .then(checkData => {
+                var btnStyle = checkData.downloaded ? 'font-style: italic;' : 'font-weight: bold;';
+                var btnTitle = checkData.downloaded ? 'Quantized model already downloaded' : 'Click to download Quantized Model';
+                var btnClass = checkData.downloaded ? 'btn quant-btn downloaded' : 'btn quant-btn';
+                return '<button type="button" class="' + btnClass + '" style="' + btnStyle + '" title="' + btnTitle + '" data-downloaded="' + checkData.downloaded + '" data-repo="' + escapeHtml(data.repo_id) + '" data-filenames="' + escapeHtml(allFilesStr) + '">' + escapeHtml(label) + sizeHtml + '</button>';
+              });
           });
-          rightContent.innerHTML = html;
-          rightContent.querySelectorAll('.quant-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() { startDownload(btn.dataset.repo, btn.dataset.filenames); });
+          
+          Promise.all(htmlPromises).then(function(buttonsHtml) {
+            rightContent.innerHTML = buttonsHtml.join('');
+            rightContent.querySelectorAll('.quant-btn').forEach(function(btn) {
+              btn.addEventListener('click', function() {
+                if (btn.dataset.downloaded === "true") {
+                  if (!confirm("This quantized model is already downloaded. Do you want to re-download it?")) {
+                    return;
+                  }
+                }
+                startDownload(btn.dataset.repo, btn.dataset.filenames); 
+              });
+            });
           });
         } else if (data.gguf_files && data.gguf_files.length) {
           var html = '';
@@ -589,6 +607,17 @@
       });
   }
   var downloadEntries = [];
+
+  function cancelJob(jobId) {
+    fetch('/api/download/cancel/' + encodeURIComponent(jobId), { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function() {
+        var entry = downloadEntries.find(function(e) { return e.jobId === jobId; });
+        if (entry) entry.status = 'cancelled';
+        renderBottom();
+      });
+  }
+
   function startDownload(repoId, filenamesStr) {
     var filenames = (filenamesStr || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
     if (filenames.length === 0) return;
@@ -620,9 +649,14 @@
           entry.status = s.status;
           entry.path = s.path;
           entry.error = s.error;
+          entry.progress = s.progress || 0;
+          entry.speed = s.speed || 0;
+          entry.eta = s.eta || 0;
+          entry.downloadedBytes = s.downloaded_bytes || 0;
+          entry.totalBytes = s.total_bytes || 0;
         }
         renderBottom();
-        if (s.status === 'running') setTimeout(function() { pollJob(jobId); }, 1500);
+        if (s.status === 'running') setTimeout(function() { pollJob(jobId); }, 500);
       });
   }
   function appendBottom(text, isError) {
@@ -632,20 +666,42 @@
     bottomContent.appendChild(p);
   }
   function renderBottom() {
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    function formatTime(secs) {
+      if (!secs || secs < 0) return '0s';
+      if (secs > 3600) return (secs/3600).toFixed(1) + 'h';
+      if (secs > 60) return (secs/60).toFixed(1) + 'm';
+      return secs.toFixed(0) + 's';
+    }
+    
     var html = '';
     downloadEntries.forEach(function(e) {
       var cls = 'download-job';
-      var text = e.label + ': ';
+      var info = e.label + ': ';
+      var controls = '';
+      var progressHtml = '';
+      
       if (e.status === 'completed') {
         cls += ' done';
-        text += (e.path || 'Done.');
+        info += (e.path || 'Done.');
       } else if (e.status === 'failed') {
         cls += ' error';
-        text += (e.error || 'Failed.');
+        info += (e.error || 'Failed.');
+      } else if (e.status === 'cancelled') {
+        cls += ' error';
+        info += 'Cancelled.';
       } else {
-        text += 'Downloading…';
+        info += 'Downloading ' + formatBytes(e.downloadedBytes) + " / " + formatBytes(e.totalBytes) + 
+                " (" + formatBytes(e.speed) + "/s) ETA: " + formatTime(e.eta);
+        controls = '<button class="btn btn-sm" onclick="cancelJob(\'' + e.jobId + '\')" style="float: right; padding: 2px 8px; margin-top: -4px;">Cancel</button>';
+        progressHtml = '<div style="background:#334155; height:4px; margin-top:4px; width:100%; border-radius:2px;"><div style="background:#3b82f6; height:100%; width:' + e.progress + '%; border-radius:2px;"></div></div>';
       }
-      html += '<div class="' + cls + '">' + text + '</div>';
+      html += '<div class="' + cls + '" style="margin-bottom:8px; padding:10px; background:#1e293b; border-radius:6px; font-family:monospace; font-size:12px;">' + info + controls + progressHtml + '</div>';
     });
     if (!html) html = '<p class="muted" style="margin: 0;">No active downloads.</p>';
     bottomContent.innerHTML = html;

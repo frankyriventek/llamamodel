@@ -2,4 +2,4 @@
 # Override with environment variables: LLAMAMODEL_PORT, LLAMAMODEL_MODELS_DIR
 
 port: 8081
-models_dir: ~/.cache/huggingface
+models_dir: "~/.cache/huggingface/models"

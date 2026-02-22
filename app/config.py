@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Defaults
 DEFAULT_PORT = 8081
-DEFAULT_MODELS_DIR = "~/.cache/huggingface"
+DEFAULT_MODELS_DIR = "~/.cache/huggingface/models"
 
 CONFIG_FILENAMES = ("config.yaml", "config.yml")
 _CONFIG_WRITE_FILENAME = "config.yaml"
