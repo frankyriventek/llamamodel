@@ -27,6 +27,21 @@ async def my_models_page(request: Request):
     logger.debug("GET /models")
     config = get_config()
     path = _ini_path()
+    
+    # Check if there are top level generic parameters
+    ini_parser = ini_manager.read_ini(path)
+    # The read_ini parses things outside sections into '__top__' dummy section if applicable, 
+    # but the way we save it, they might go into a custom section. Let's look for top-level keys.
+    # configparser supports a DEFAULT section, which we can extract:
+    general_params = dict(ini_parser.defaults())
+    # we can also add __top__ if it was preserved
+    if ini_parser.has_section("__top__"):
+         general_params.update(dict(ini_parser["__top__"]))
+    
+    # We remove LLAMA_CONFIG_VERSION if present because it's managed internally
+    if "LLAMA_CONFIG_VERSION" in general_params:
+         del general_params["LLAMA_CONFIG_VERSION"]
+         
     sections = ini_manager.list_sections(path)
     logger.debug("GET /models: %d sections", len(sections))
 
@@ -96,6 +111,7 @@ async def my_models_page(request: Request):
         {
             "request": request,
             "sections": enriched_sections,
+            "general_params": general_params,
             "unconfigured_files": unconfigured_files,
             "config": config
         },
@@ -123,10 +139,19 @@ async def edit_model_page(request: Request, section_name: str):
     logger.debug("GET /models/edit/%s", section_name)
     config = get_config()
     path = _ini_path()
-    params = ini_manager.get_section(path, section_name)
-    if params is None:
-        logger.warning("GET /models/edit/%s: section not found", section_name)
-        raise HTTPException(status_code=404, detail="Model not found")
+    
+    if section_name == "GENERAL_PARAMS":
+        # special case to edit top level config
+        ini_parser = ini_manager.read_ini(path)
+        params = dict(ini_parser.defaults())
+        if "LLAMA_CONFIG_VERSION" in params:
+             del params["LLAMA_CONFIG_VERSION"]
+    else:
+        params = ini_manager.get_section(path, section_name)
+        if params is None:
+            logger.warning("GET /models/edit/%s: section not found", section_name)
+            raise HTTPException(status_code=404, detail="Model not found")
+            
     return templates.TemplateResponse(
         "model_edit.html",
         {"request": request, "section_name": section_name, "params": params, "config": config},
@@ -149,6 +174,23 @@ async def save_model(section_name: str, request: Request):
     new_val = (form.get("new_param_value") or "").strip()
     if new_key:
         params[new_key] = new_val
+        
+    if section_name == "GENERAL_PARAMS":
+        # write to DEFAULT config of configparser by hacking into python API
+        from configparser import ConfigParser
+        ini_parser = ini_manager.read_ini(path)
+        # remove all old defaults that don't match, except LLAMA_CONFIG_VERSION
+        current_defaults = dict(ini_parser.defaults())
+        for k in current_defaults:
+            if k != "LLAMA_CONFIG_VERSION":
+                del ini_parser.defaults()[k]
+        
+        for k, v in params.items():
+            ini_parser.defaults()[k] = v
+        ini_manager.write_ini(path, ini_parser)
+        logger.info("POST /models/edit/%s: saved general config %d params", section_name, len(params))
+        return RedirectResponse(url="/models", status_code=303)
+
     ini_manager.set_section(path, section_name, params)
     logger.info("POST /models/edit/%s: saved %d params", section_name, len(params))
     return RedirectResponse(url="/models", status_code=303)

@@ -85,11 +85,8 @@
     }
     
     document.addEventListener("DOMContentLoaded", function() {
-        // Select the first model if available
-        var firstCard = document.querySelector('.model-card-item');
-        if (firstCard) {
-            firstCard.click();
-        }
+        // Automatically select the 'General Parameters' block on load
+        selectModel('general');
     });
 
     function deleteModel(name) {
@@ -108,7 +105,20 @@
   
   <!-- Left Pane: List of models -->
   <div class="models-pane">
+      
+      <!-- General Parameters Card ALWAYS ON TOP -->
+      <div id="card-general" class="card model-card-item" style="border: 2px solid var(--accent); background: rgba(122, 162, 247, 0.05); margin-bottom: 2rem;" onclick="selectModel('general')">
+          <div class="card-left">
+              <strong style="font-size: 1.1rem; color: var(--accent);">General Parameters</strong>
+              <div class="muted" style="font-size: 0.85rem; margin-top: 0.2rem;">
+                  Global settings applied to all models
+              </div>
+          </div>
+          <!-- No clear right-pane delete button here to make it undeleteable -->
+      </div>
+      
       {% if sections %}
+      <h3 style="margin-top: 0; font-size: 1.1rem; border-bottom: 1px solid var(--muted); padding-bottom: 0.5rem; margin-bottom: 1rem;">Downloaded Models</h3>
       <ul style="list-style: none; padding: 0;">
         {% for s in sections %}
         <li id="card-{{ loop.index }}" class="card model-card-item" onclick="selectModel('{{ loop.index }}')">
@@ -152,8 +162,39 @@
 
   <!-- Right Pane: Model Details -->
   <div class="details-pane">
-      <div id="empty-state" class="model-details active" style="text-align: center; margin-top: 5rem; color: var(--muted);">
-          <p>Select a model from the list to view its configuration.</p>
+      <div id="empty-state" class="model-details" style="text-align: center; margin-top: 5rem; color: var(--muted);">
+          <p>Select an item from the list to view its configuration.</p>
+      </div>
+      
+      <!-- Detail block for general parameters -->
+      <div id="details-general" class="model-details active">
+          <div class="detail-header">
+              <div>
+                  <h2 style="margin: 0; color: var(--accent); font-size: 1.8rem;">General Parameters</h2>
+                  <div class="muted" style="font-size: 0.95rem; margin-top: 0.5rem;">
+                      Global overrides for <code>llama.cpp</code> server
+                  </div>
+              </div>
+              <a href="/models/edit/GENERAL_PARAMS" class="btn" style="font-size: 0.9rem;">Edit Configuration</a>
+          </div>
+          
+          <div class="card" style="background: rgba(36, 40, 59, 0.5);">
+              <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--accent);">About Global Configuration</h3>
+              <p class="muted" style="font-size: 0.9rem; margin-bottom: 0;">These parameters live at the top of <code>models.ini</code> (in the <code>[DEFAULT]</code> section) and will be applied systematically across all models loaded on this server unless overridden specifically.</p>
+          </div>
+          
+          <h3 style="margin-top: 2rem;">Configured Global Parameters</h3>
+          {% if general_params %}
+          <div class="card">
+              <ul class="muted" style="margin: 0; padding-left: 1rem; list-style-type: square; font-size: 0.95rem;">
+                {% for k, v in general_params.items() %}
+                <li style="margin-bottom: 0.5rem;"><code style="color: #7dcfff; background: rgba(125, 207, 255, 0.1);">{{ k }}</code> = <span style="color: var(--fg)">{{ v }}</span></li>
+                {% endfor %}
+              </ul>
+          </div>
+          {% else %}
+          <p class="muted">No global parameters set. The defaults defined by llama.cpp will be used.</p>
+          {% endif %}
       </div>
       
       {% for s in sections %}
