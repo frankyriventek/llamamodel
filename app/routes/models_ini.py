@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.main import templates, get_config
 from app.config import get_models_ini_path
 from app.services import ini_manager
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,53 @@ async def my_models_page(request: Request):
 
     models_dir = Path(config["models_dir"])
     configured_paths = set()
+    
+    # We will enrich sections to have file size, card name, quant, file name
+    from app.services.hf_service import _extract_quantization
+    import os
+    
+    enriched_sections = []
+    
     for s in sections:
-        if "LLAMA_ARG_MODEL" in s["params"]:
-            # Normalize to resolve symlinks
-            resolved = Path(s["params"]["LLAMA_ARG_MODEL"]).resolve()
+        model_path_str = s["params"].get("LLAMA_ARG_MODEL")
+        if model_path_str:
+            resolved = Path(model_path_str).resolve()
             configured_paths.add(str(resolved))
+            file_name = resolved.name
+            size_mb = 0
+            if resolved.exists():
+                size_mb = os.path.getsize(resolved) / (1024 * 1024)
+            size_str = f"{size_mb / 1024:.2f} GB" if size_mb > 1024 else f"{size_mb:.0f} MB"
+            
+            quant = _extract_quantization(file_name)
+            # if we successfully extracted quant, remove it from the name to get card name
+            card_name = file_name
+            if quant:
+                # Find the quant string and remove it (and preceding '-' or '.')
+                import re
+                esc_quant = re.escape(quant)
+                # match dash or dot, then the quant (case insensitive), then .gguf
+                # example: -Q4_K_M.gguf or .q4_k_m.gguf
+                m = re.search(r"[-.]" + esc_quant + r"(?:\.gguf)?", file_name, flags=re.IGNORECASE)
+                if m:
+                    card_name = file_name[:m.start()]
+                else:
+                    card_name = file_name.replace(".gguf", "")
+            else:
+                card_name = file_name.replace(".gguf", "")
+        else:
+            file_name = "Unknown"
+            size_str = "0 MB"
+            card_name = s.name
+            quant = "Unknown"
+            
+        s["display"] = {
+            "card_name": card_name,
+            "quantization": quant,
+            "file_name": file_name,
+            "file_size": size_str,
+        }
+        enriched_sections.append(s)
 
     unconfigured_files = []
     if models_dir.exists():
@@ -52,7 +95,7 @@ async def my_models_page(request: Request):
         "my_models.html",
         {
             "request": request,
-            "sections": sections,
+            "sections": enriched_sections,
             "unconfigured_files": unconfigured_files,
             "config": config
         },
@@ -113,9 +156,24 @@ async def save_model(section_name: str, request: Request):
 
 @router.get("/delete/{section_name}")
 async def delete_model(section_name: str):
-    """Remove model section."""
+    """Remove model section and associated file."""
     logger.debug("GET /models/delete/%s", section_name)
     path = _ini_path()
+    
+    # Check if there is a file associated
+    params = ini_manager.get_section(path, section_name)
+    file_deleted = False
+    
+    if params and "LLAMA_ARG_MODEL" in params:
+        file_route = Path(params["LLAMA_ARG_MODEL"]).resolve()
+        if file_route.exists() and file_route.is_file():
+            try:
+                os.remove(file_route)
+                logger.info("GET /models/delete/%s: deleted file %s", section_name, file_route)
+                file_deleted = True
+            except Exception as e:
+                logger.error("Failed to delete file %s: %s", file_route, e)
+    
     ok = ini_manager.delete_section(path, section_name)
     if not ok:
         logger.warning("GET /models/delete/%s: section not found", section_name)

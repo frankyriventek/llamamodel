@@ -1,43 +1,207 @@
 {% extends "base.html" %}
 {% block title %}My Models – LLM Manager{% endblock %}
+{% block head %}
+<style>
+  /* Override default container width for this page */
+  .container { max-width: 100% !important; margin: 0; padding: 1.5rem; }
+  
+  .layout-container {
+      display: flex;
+      flex-direction: row;
+      gap: 2rem;
+      height: calc(100vh - 150px);
+  }
+  .models-pane {
+      flex: 1;
+      max-width: 50%;
+      overflow-y: auto;
+      padding-right: 1rem;
+      border-right: 1px solid var(--muted);
+  }
+  .details-pane {
+      flex: 1;
+      max-width: 50%;
+      overflow-y: auto;
+      padding-left: 1rem;
+  }
+  
+  .model-card-item {
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s;
+  }
+  .model-card-item:hover {
+      background: rgba(122, 162, 247, 0.1);
+  }
+  .model-card-item.selected {
+      border: 2px solid var(--accent);
+      background: rgba(122, 162, 247, 0.05);
+  }
+  .card-left {
+      display: flex;
+      flex-direction: column;
+  }
+  .card-right {
+      display: flex;
+      align-items: center;
+  }
+  
+  .model-details {
+      display: none;
+  }
+  .model-details.active {
+      display: block;
+  }
+  
+  .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid #333;
+      padding-bottom: 1rem;
+  }
+  
+  .info-table th { text-align: left; padding: 0.5rem 1rem 0.5rem 0; color: var(--muted); font-weight: normal; }
+  .info-table td { padding: 0.5rem 0; font-family: monospace; }
+</style>
+<script>
+    function selectModel(modelId) {
+        document.querySelectorAll('.model-card-item').forEach(el => el.classList.remove('selected'));
+        var card = document.getElementById('card-' + modelId);
+        if (card) {
+            card.classList.add('selected');
+        }
+        
+        document.querySelectorAll('.model-details').forEach(el => el.classList.remove('active'));
+        var detail = document.getElementById('details-' + modelId);
+        if (detail) {
+            detail.classList.add('active');
+        } else {
+            document.getElementById('empty-state').classList.add('active');
+        }
+    }
+    
+    document.addEventListener("DOMContentLoaded", function() {
+        // Select the first model if available
+        var firstCard = document.querySelector('.model-card-item');
+        if (firstCard) {
+            firstCard.click();
+        }
+    });
+
+    function deleteModel(name) {
+        if (confirm("Remove this model from models.ini and delete the associated file?")) {
+            // we will go to API handler 
+            window.location.href = '/models/delete/' + encodeURIComponent(name);
+        }
+    }
+</script>
+{% endblock %}
 {% block content %}
 <h1>My Models</h1>
 <p class="muted">Models defined in <code>models.ini</code> ({{ config.models_dir }}/models.ini). Compatible with llama.cpp server.</p>
-{% if sections %}
-<ul style="list-style: none; padding: 0;">
-  {% for s in sections %}
-  <li class="card">
-    <strong>{{ s.name }}</strong>
-    <a href="/models/edit/{{ s.name | urlencode }}" class="btn btn-secondary" style="margin-left: 0.5rem;">Edit</a>
-    <a href="/models/delete/{{ s.name | urlencode }}" class="btn btn-secondary" style="margin-left: 0.25rem;" onclick="return confirm('Remove this model from models.ini?');">Delete</a>
-    <ul class="muted" style="margin: 0.5rem 0 0; font-size: 0.85rem;">
-      {% for k, v in s.params.items() %}
-      <li><code>{{ k }}</code> = {{ v }}</li>
-      {% endfor %}
-    </ul>
-  </li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="muted">No models in models.ini yet. Download a model from Discover to add one.</p>
-{% endif %}
 
-{% if unconfigured_files %}
-<h2 style="margin-top: 2rem;">Unconfigured Local Models</h2>
-<p class="muted">These GGUF files were found in your models directory but are not in <code>models.ini</code>.</p>
-<ul style="list-style: none; padding: 0;">
-  {% for f in unconfigured_files %}
-  <li class="card" style="display: flex; justify-content: space-between; align-items: center;">
-    <div>
-      <strong>{{ f.name }}</strong><br>
-      <small class="muted" style="word-break: break-all;">{{ f.path }}</small>
-    </div>
-    <form action="/models/add_local" method="POST" style="margin: 0;">
-      <input type="hidden" name="path" value="{{ f.path }}">
-      <button type="submit" class="btn btn-primary">Add to models.ini</button>
-    </form>
-  </li>
-  {% endfor %}
-</ul>
-{% endif %}
+<div class="layout-container">
+  
+  <!-- Left Pane: List of models -->
+  <div class="models-pane">
+      {% if sections %}
+      <ul style="list-style: none; padding: 0;">
+        {% for s in sections %}
+        <li id="card-{{ loop.index }}" class="card model-card-item" onclick="selectModel('{{ loop.index }}')">
+          <div class="card-left" style="overflow: hidden; padding-right: 1rem;">
+              <strong style="font-size: 1.1rem; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">{{ s.display.card_name }}</strong>
+              <div class="muted" style="font-size: 0.85rem; margin-top: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  {{ s.display.quantization }} <span style="margin: 0 0.5rem;">|</span> {{ s.display.file_size }} <span style="margin: 0 0.5rem;">|</span> <span title="{{ s.display.file_name }}">{{ s.display.file_name }}</span>
+              </div>
+          </div>
+          <div class="card-right">
+              <button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; background: rgba(247, 118, 142, 0.2); border: 1px solid rgba(247, 118, 142, 0.4); color: #f7768e; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(247, 118, 142, 0.3)'" onmouseout="this.style.background='rgba(247, 118, 142, 0.2)'" onclick="event.stopPropagation(); deleteModel('{{ s.name }}');">
+                Delete
+              </button>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No models in models.ini yet. Download a model from Discover to add one.</p>
+      {% endif %}
+      
+      {% if unconfigured_files %}
+      <h2 style="margin-top: 2rem; font-size: 1.2rem;">Unconfigured Local Models</h2>
+      <p class="muted" style="font-size: 0.9em;">These GGUF files were found in your models directory but are not in <code>models.ini</code>.</p>
+      <ul style="list-style: none; padding: 0;">
+        {% for f in unconfigured_files %}
+        <li class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem;">
+          <div>
+            <strong>{{ f.name }}</strong><br>
+            <small class="muted" style="word-break: break-all;">{{ f.path }}</small>
+          </div>
+          <form action="/models/add_local" method="POST" style="margin: 0; margin-left:1rem;">
+            <input type="hidden" name="path" value="{{ f.path }}">
+            <button type="submit" class="btn btn-primary" style="font-size: 0.8rem; white-space: nowrap;">Add to INI</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+  </div>
+
+  <!-- Right Pane: Model Details -->
+  <div class="details-pane">
+      <div id="empty-state" class="model-details active" style="text-align: center; margin-top: 5rem; color: var(--muted);">
+          <p>Select a model from the list to view its configuration.</p>
+      </div>
+      
+      {% for s in sections %}
+      <div id="details-{{ loop.index }}" class="model-details">
+          <div class="detail-header">
+              <div>
+                  <h2 style="margin: 0; color: var(--accent); font-size: 1.8rem;">{{ s.display.card_name }}</h2>
+                  <div class="muted" style="font-size: 0.95rem; margin-top: 0.5rem;">
+                      {{ s.display.quantization }}
+                  </div>
+              </div>
+              <a href="/models/edit/{{ s.name | urlencode }}" class="btn" style="font-size: 0.9rem;">Edit Configuration</a>
+          </div>
+          
+          <div class="card" style="background: rgba(36, 40, 59, 0.5);">
+              <h3 style="margin-top: 0; font-size: 1.1rem;">File Information</h3>
+              <table class="info-table" style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                      <th style="width: 120px;">File Name</td>
+                      <td>{{ s.display.file_name }}</td>
+                  </tr>
+                  <tr>
+                      <th>File Size</td>
+                      <td>{{ s.display.file_size }}</td>
+                  </tr>
+                  <tr>
+                      <th>INI Section</td>
+                      <td style="color: var(--accent);">[{{ s.name }}]</td>
+                  </tr>
+              </table>
+          </div>
+          
+          <h3 style="margin-top: 2rem;">Current Parameters</h3>
+          {% if s.params %}
+          <div class="card">
+              <ul class="muted" style="margin: 0; padding-left: 1rem; list-style-type: square; font-size: 0.95rem;">
+                {% for k, v in s.params.items() %}
+                <li style="margin-bottom: 0.5rem;"><code style="color: #7dcfff; background: rgba(125, 207, 255, 0.1);">{{ k }}</code> = <span style="color: var(--fg)">{{ v }}</span></li>
+                {% endfor %}
+              </ul>
+          </div>
+          {% else %}
+          <p class="muted">No parameters explicitly set.</p>
+          {% endif %}
+      </div>
+      {% endfor %}
+  </div>
+
+</div>
+
 {% endblock %}

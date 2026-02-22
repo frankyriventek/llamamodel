@@ -1,5 +1,122 @@
 {% extends "base.html" %}
 {% block title %}Edit {{ section_name }} – LLM Manager{% endblock %}
+{% block head %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+/* Adjust select2 to fit dark theme */
+.select2-container--default .select2-selection--single {
+    background-color: var(--card);
+    border: 1px solid var(--muted);
+    border-radius: 4px;
+    height: 38px;
+}
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    color: var(--fg);
+    line-height: 36px;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 36px;
+}
+.select2-dropdown {
+    background-color: var(--card);
+    border: 1px solid var(--muted);
+}
+.select2-results__option {
+    color: var(--fg);
+}
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background-color: var(--accent);
+    color: var(--bg);
+}
+.select2-search--dropdown .select2-search__field {
+    background-color: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--muted);
+}
+</style>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function() {
+        $('#new_param_key_select').select2({
+            placeholder: 'Search for a parameter...',
+            allowClear: true,
+            templateResult: formatParam,
+            templateSelection: formatParamSelection
+        });
+        
+        $('#new_param_key_select').on('change', function() {
+            var val = $(this).val();
+            if(val) {
+                // If the user selects a parameter, automatically build the LLAMA_ARG_ environment variable
+                $('#hidden_param_key').val('LLAMA_ARG_' + val.toUpperCase().replace(/-/g, '_'));
+            } else {
+                $('#hidden_param_key').val('');
+            }
+        });
+
+        // Initialize with predefined values
+        const params = [
+            { id: "model", text: "model", desc: "model path" },
+            { id: "model-url", text: "model-url", desc: "model download url" },
+            { id: "alias", text: "alias", desc: "set an alias for the model" },
+            { id: "c", text: "c", desc: "size of the prompt context" },
+            { id: "s", text: "s", desc: "RNG seed" },
+            { id: "b", text: "b", desc: "logical maximum batch size" },
+            { id: "ub", text: "ub", desc: "physical maximum batch size" },
+            { id: "t", text: "t", desc: "number of threads to use during generation" },
+            { id: "tb", text: "tb", desc: "number of threads to use during batch and prompt processing" },
+            { id: "system-prompt-file", text: "system-prompt-file", desc: "Set a file to load a system prompt" },
+            { id: "n-predict", text: "n-predict", desc: "number of tokens to predict" },
+            { id: "ngl", text: "ngl", desc: "number of layers to store in VRAM" },
+            { id: "top-k", text: "top-k", desc: "top-k sampling" },
+            { id: "top-p", text: "top-p", desc: "top-p sampling" },
+            { id: "min-p", text: "min-p", desc: "min-p sampling" },
+            { id: "xtc-probability", text: "xtc-probability", desc: "xtc probability" },
+            { id: "xtc-threshold", text: "xtc-threshold", desc: "xtc threshold" },
+            { id: "tfs", text: "tfs", desc: "tail free sampling, parameter z" },
+            { id: "typical", text: "typical", desc: "locally typical sampling, parameter p" },
+            { id: "repeat-last-n", text: "repeat-last-n", desc: "last n tokens to consider for penalize" },
+            { id: "repeat-penalty", text: "repeat-penalty", desc: "penalize repeat sequence of tokens" },
+            { id: "presence-penalty", text: "presence-penalty", desc: "repeat alpha presence penalty" },
+            { id: "frequency-penalty", text: "frequency-penalty", desc: "repeat alpha frequency penalty" },
+            { id: "dry-multiplier", text: "dry-multiplier", desc: "set DRY sampling multiplier" },
+            { id: "dry-base", text: "dry-base", desc: "set DRY sampling base value" },
+            { id: "dry-allowed-length", text: "dry-allowed-length", desc: "set allowed length for DRY sampling" },
+            { id: "dry-penalty-last-n", text: "dry-penalty-last-n", desc: "set DRY penalty for the last n tokens" }
+        ];
+
+        var $select = $('#new_param_key_select');
+        $.each(params, function(i, p) {
+            var option = new Option(p.text, p.id, false, false);
+            $(option).attr('data-desc', p.desc);
+            $select.append(option);
+        });
+        
+        // Trigger select2 update
+        $select.trigger('change');
+    });
+
+    function formatParam (param) {
+      if (!param.id) {
+        return param.text;
+      }
+      var desc = $(param.element).data('desc');
+      if (!desc && param.desc) desc = param.desc;
+      var $state = $(
+        '<span><strong>' + param.text + '</strong> <small style="color:var(--muted); margin-left:10px;">' + (desc || '') + '</small></span>'
+      );
+      return $state;
+    }
+
+    function formatParamSelection (param) {
+        if (!param.id) {
+            return param.text;
+        }
+        return param.text;
+    }
+</script>
+{% endblock %}
 {% block content %}
 <h1>Edit model: {{ section_name }}</h1>
 <p class="muted">These parameters are written as <code>LLAMA_ARG_*</code> in models.ini for llama.cpp server.</p>
@@ -12,13 +129,22 @@
     </div>
     {% endfor %}
   </div>
-  <div style="margin-top: 1rem;">
-    <label>Add parameter (optional)</label>
-    <input type="text" name="new_param_key" placeholder="e.g. LLAMA_ARG_N_CTX" style="margin-right: 0.5rem;">
-    <input type="text" name="new_param_value" placeholder="value">
+  <div style="margin-top: 1rem; margin-bottom: 2rem;" class="card">
+    <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Add parameter</label>
+    <div style="display: flex; gap: 1rem; align-items: flex-start;">
+        <div style="flex: 1; max-width: 400px;">
+            <select id="new_param_key_select" style="width: 100%;">
+                <option></option>
+            </select>
+            <input type="hidden" id="hidden_param_key" name="new_param_key">
+        </div>
+        <div style="flex: 1;">
+            <input type="text" name="new_param_value" placeholder="Value for the parameter" style="width: 100%; max-width: 300px; height: 38px;">
+        </div>
+    </div>
+    <p class="muted" style="margin-top: 0.75rem; font-size: 0.85rem;">Select an argument from the list. It will be automatically saved as uppercase <code>LLAMA_ARG_...</code> for compatibility with llama.cpp server.</p>
   </div>
-  <p class="muted" style="margin-top: 0.5rem;">Common keys: LLAMA_ARG_N_CTX (context size), LLAMA_ARG_N_GPU_LAYERS (-1 = all), LLAMA_ARG_MODEL (path to .gguf), LLAMA_ARG_BATCH, LLAMA_ARG_THREADS.</p>
-  <button type="submit">Save</button>
-  <a href="/models" class="btn btn-secondary">Cancel</a>
+  <button type="submit" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.6rem 1.5rem;">Save Changes</button>
+  <a href="/models" class="btn btn-secondary" style="font-size: 1.1rem; padding: 0.6rem 1.5rem; margin-left: 1rem;">Cancel</a>
 </form>
 {% endblock %}
