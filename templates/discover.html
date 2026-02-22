@@ -577,11 +577,6 @@
             rightContent.innerHTML = buttonsHtml.join('');
             rightContent.querySelectorAll('.quant-btn').forEach(function(btn) {
               btn.addEventListener('click', function() {
-                if (btn.dataset.downloaded === "true") {
-                  if (!confirm("This quantized model is already downloaded. Do you want to re-download it?")) {
-                    return;
-                  }
-                }
                 startDownload(btn.dataset.repo, btn.dataset.filenames); 
               });
             });
@@ -605,11 +600,6 @@
             rightContent.innerHTML = buttonsHtml.join('');
             rightContent.querySelectorAll('.quant-btn').forEach(function(btn) {
               btn.addEventListener('click', function() {
-                if (btn.dataset.downloaded === "true") {
-                  if (!confirm("This quantized model is already downloaded. Do you want to re-download it?")) {
-                    return;
-                  }
-                }
                 startDownload(btn.dataset.repo, btn.dataset.filenames);
               });
             });
@@ -639,23 +629,35 @@
     var filenames = (filenamesStr || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
     if (filenames.length === 0) return;
     var firstFile = filenames[0];
-    var quantLabel = stripQuantization(firstFile) || firstFile.replace(/\.gguf$/i, '');
-    var label = quantLabel + ' – ' + modelName(repoId);
-    var qs = 'repo_id=' + encodeURIComponent(repoId);
-    if (filenames.length === 1) {
-      qs += '&filename=' + encodeURIComponent(filenames[0]);
-    } else {
-      qs += '&filenames=' + encodeURIComponent(filenames.join(','));
-    }
-    fetch('/api/download?' + qs, { method: 'POST' })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        var jobId = data.job_id;
-        downloadEntries.push({ jobId: jobId, label: label });
-        renderBottom();
-        pollJob(jobId);
-      })
-      .catch(function(e) { appendBottom('Error: ' + e.message, true); });
+    
+    // Safety check just in time, in case button state wasn't updated or was bypassed
+    fetch('/api/models/check?repo_id=' + encodeURIComponent(repoId) + '&filename=' + encodeURIComponent(firstFile))
+      .then(r => r.json())
+      .then(checkData => {
+        if (checkData.downloaded) {
+          if (!confirm("This quantized model is already downloaded. Do you want to re-download it?")) {
+            return;
+          }
+        }
+        
+        var quantLabel = stripQuantization(firstFile) || firstFile.replace(/\\.gguf$/i, '');
+        var label = quantLabel + ' – ' + modelName(repoId);
+        var qs = 'repo_id=' + encodeURIComponent(repoId);
+        if (filenames.length === 1) {
+          qs += '&filename=' + encodeURIComponent(filenames[0]);
+        } else {
+          qs += '&filenames=' + encodeURIComponent(filenames.join(','));
+        }
+        fetch('/api/download?' + qs, { method: 'POST' })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var jobId = data.job_id;
+            downloadEntries.push({ jobId: jobId, label: label });
+            renderBottom();
+            pollJob(jobId);
+          })
+          .catch(function(e) { appendBottom('Error: ' + e.message, true); });
+      });
   }
   function pollJob(jobId) {
     fetch('/api/download/' + encodeURIComponent(jobId))
