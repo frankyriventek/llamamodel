@@ -8,30 +8,30 @@ LlamaModel is a Python-based web application providing an LMStudio-like interfac
 ```mermaid
 flowchart LR
     subgraph Client [Client / Browser]
-        UI[Web UI (HTML + JS)]
-        CSS[styles.css]
+        UI["Web UI (HTML + JS)"]
+        CSS["styles.css"]
     end
 
     subgraph Server [Backend / FastAPI]
-        Router[API & Page Routers]
-        Config[App Config (config.py)]
-        Params[Params Parser (params_parser.py)]
+        Router["API & Page Routers"]
+        Config["App Config (config.py)"]
+        Params["Params Parser (params_parser.py)"]
         
         subgraph Services [Core Services]
-            HF[HF Service (hf_service.py)]
-            INI[INI Manager (ini_manager.py)]
+            HF["HF Service (hf_service.py)"]
+            INI["INI Manager (ini_manager.py)"]
         end
     end
 
     subgraph Data [Filesystem]
-        CfgFile[(config.yaml)]
-        ModelsDir[(models_dir)]
-        IniFile[(models.ini)]
-        HFCache[(HF Hub Direct Path Cache)]
+        CfgFile[("config.yaml")]
+        ModelsDir[("models_dir")]
+        IniFile[("models.ini")]
+        HFCache[("HF Hub Direct Path Cache")]
     end
     
     subgraph External [External Services]
-        HuggingFace[Hugging Face API & File Hub]
+        HuggingFace["Hugging Face API & File Hub"]
     end
 
     UI --> Router
